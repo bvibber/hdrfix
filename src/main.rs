@@ -96,7 +96,8 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8])
 {
     // 80 nits is the nominal SDR white point
-    let sdr_white = 80.0;
+    // But daylight displays are often set more like 200!
+    let sdr_white = 200.0;
     for y in 0..height {
         let scale_in = Vec3::splat(1.0 / 255.0);
         let scale_hdr = Vec3::splat(10000.0 / sdr_white);
