@@ -1,65 +1,35 @@
-use std::convert::From;
-use std::fmt;
 use std::fs::File;
 use std::io;
-use std::num::ParseFloatError;
+use std::num;
 
 // Math bits
 use glam::f32::{Mat3, Vec3};
 
 // CLI bits
-extern crate clap;
 use clap::{Arg, App, ArgMatches};
 
 // Reading and writing files
-extern crate png;
-extern crate mtpng;
 use mtpng::{CompressionLevel, Header};
 use mtpng::encoder::{Encoder, Options};
 use mtpng::ColorType;
 
+// Error bits
+use thiserror::Error;
 
 type Result<T> = std::result::Result<T, LocalError>;
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 enum LocalError {
-    IoError(io::Error),
-    ParseFloatError(ParseFloatError),
-    PNGDecodingError(png::DecodingError)
+    #[error("I/O error")]
+    IoError(#[from] io::Error),
+    #[error("numeric format error")]
+    ParseFloatError(#[from] num::ParseFloatError),
+    #[error("PNG decoding error")]
+    PNGDecodingError(#[from] png::DecodingError),
+    #[error("PNG input must be in 8bpp true color")]
+    PNGFormatError()
 }
 
-impl fmt::Display for LocalError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        match self {
-            LocalError::IoError(err) => write!(f, "{}", err),
-            LocalError::ParseFloatError(err) => write!(f, "{}", err),
-            LocalError::PNGDecodingError(err) => write!(f, "{}", err)
-        }
-    }
-}
-
-impl From<io::Error> for LocalError {
-    fn from(error: io::Error) -> Self {
-        LocalError::IoError(error)
-    }
-}
-
-impl From<ParseFloatError> for LocalError {
-    fn from(error: ParseFloatError) -> Self {
-        LocalError::ParseFloatError(error)
-    }
-}
-
-impl From<png::DecodingError> for LocalError {
-    fn from(error: png::DecodingError) -> Self {
-        LocalError::PNGDecodingError(error)
-    }
-}
-
-fn err<T>(payload: &str) -> Result<T>
-{
-    Err(LocalError::from(io::Error::new(io::ErrorKind::Other, payload)))
-}
 
 // Read an input PNG and return its size and contents
 // It must be a certain format (8bpp true color no alpha)
@@ -75,10 +45,10 @@ fn read_png(filename: &str)
     let (info, mut reader) = decoder.read_info()?;
 
     if info.bit_depth != png::BitDepth::Eight {
-        return err("color depth must be 8 bpp currently");
+        return Err(LocalError::PNGFormatError());
     }
     if info.color_type != png::ColorType::RGB {
-        return err("color type must be true color with no alpha");
+        return Err(LocalError::PNGFormatError());
     }
 
     let mut data = vec![0u8; info.buffer_size()];
