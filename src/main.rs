@@ -82,7 +82,19 @@ fn reinhold_tonemap(val: Vec3) -> Vec3 {
     let white2 = white * white;
     let scaled_luma = luma * (1.0 + luma / white2) / (1.0 + luma);
     let scaled_rgb = val * Vec3::splat(scaled_luma / luma);
-    scaled_rgb.clamp(Vec3::ZERO, Vec3::ONE)
+    scaled_rgb
+}
+
+fn clamp_colors(val: Vec3) -> Vec3 {
+    // If any color elements went outside the color gamut, scale them back in.
+    // This will preserve color at the cost of contrast
+    let max = val.max_element();
+    if max > 1.0 {
+        val / Vec3::splat(max)
+    } else {
+        val
+    }
+
 }
 
 fn linear_to_srgb(val: Vec3) -> Vec3 {
@@ -114,6 +126,7 @@ fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8])
             val = val * scale_hdr;
             val = bt2020_to_srgb(val);
             val = reinhold_tonemap(val);
+            val = clamp_colors(val);
             val = linear_to_srgb(val);
             val = val * scale_out;
             data[index] = val.x as u8;
