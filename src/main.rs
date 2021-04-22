@@ -69,7 +69,7 @@ fn bt2020_to_srgb(val: Vec3) -> Vec3 {
     matrix.mul_vec3(val)
 }
 
-fn reinhold_tonemap(val: Vec3) -> Vec3 {
+fn reinhold_tonemap(val: Vec3, white: f32) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     // Do the Reinhold tone mapping on luminance, then scale the RGB
@@ -78,7 +78,6 @@ fn reinhold_tonemap(val: Vec3) -> Vec3 {
     let kg = 0.7152;
     let kb = 0.0722;
     let luma = val.x * kr + val.y * kg + val.z * kb;
-    let white = 1000.0; // fake a nominal max of 1000 nits in scene
     let white2 = white * white;
     let scaled_luma = luma * (1.0 + luma / white2) / (1.0 + luma);
     let scaled_rgb = val * Vec3::splat(scaled_luma / luma);
@@ -109,11 +108,14 @@ fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8])
 {
     // 80 nits is the nominal SDR white point
     // But daylight displays are often set more like 200!
-    let sdr_white = 200.0;
+    // Pick something nice in between.
+    let sdr_white = 160.0;
+    let hdr_white = 1000.0; // max luminance to preserve
+    let hdr_max = 10000.0; // the 1.0 value for BT.2100 linear
+    let scale_in = Vec3::splat(1.0 / 255.0);
+    let scale_scrgb = Vec3::splat(hdr_max / sdr_white);
+    let scale_out = Vec3::splat(255.0);
     for y in 0..height {
-        let scale_in = Vec3::splat(1.0 / 255.0);
-        let scale_hdr = Vec3::splat(10000.0 / sdr_white);
-        let scale_out = Vec3::splat(255.0);
         for x in 0..width {
             // Read the original pixel value
             let index = ((x + y * width) * 3) as usize;
@@ -123,9 +125,9 @@ fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8])
             let mut val = Vec3::new(r1, g1, b1);
             val = val * scale_in;
             val = pq_to_linear(val);
-            val = val * scale_hdr;
+            val = val * scale_scrgb;
             val = bt2020_to_srgb(val);
-            val = reinhold_tonemap(val);
+            val = reinhold_tonemap(val, hdr_white);
             val = clamp_colors(val);
             val = linear_to_srgb(val);
             val = val * scale_out;
