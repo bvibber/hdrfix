@@ -46,3 +46,21 @@ Adjustable parmeters are `--gamma`, `--sdr-white` and `--hdr-max`, all of which 
 * `--hdr-max=N` sets the maximum luminance level for the Reinhold tone-mapping algorithm. It has relatively modest effect, and defaults to `1000` nits.
 
 I found a gamma of 1.4 to be pleasing to the eye on several sample screen captures, but it's an easy parameter to adjust as needed!
+
+# Todo / roadmap
+
+Definitely/short-term:
+* auto-calculate the hdr max white point?
+* change `--sdr-white` param to a linear `--scale` param
+* auto-output-filename feature to make it easier to use on live folders
+* add JPEG XR input (should reduce banding in sky vs using the PNGs)
+* add JPEG output
+* add compression params for JPEG output
+
+Probably:
+* 'folder watch' feature to convert all new .jxr files appearing in a folder while we run with default parameters
+
+Maybe/later/no rush:
+* a basic GUI with HDR and SDR side-by-side view
+* GUI sliders for the adjustable parameters
+* drag/drop and open/save dialog support
