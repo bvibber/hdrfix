@@ -1,6 +1,8 @@
+use std::convert::From;
+use std::fmt;
 use std::fs::File;
 use std::io;
-use std::io::{Error, ErrorKind};
+use std::num::ParseFloatError;
 
 // Math bits
 use glam::f32::{Mat3, Vec3};
@@ -16,15 +18,53 @@ use mtpng::{CompressionLevel, Header};
 use mtpng::encoder::{Encoder, Options};
 use mtpng::ColorType;
 
-pub fn err(payload: &str) -> Error
+
+type Result<T> = std::result::Result<T, LocalError>;
+
+#[derive(Debug)]
+enum LocalError {
+    IoError(io::Error),
+    ParseFloatError(ParseFloatError),
+    PNGDecodingError(png::DecodingError)
+}
+
+impl fmt::Display for LocalError {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            LocalError::IoError(err) => write!(f, "{}", err),
+            LocalError::ParseFloatError(err) => write!(f, "{}", err),
+            LocalError::PNGDecodingError(err) => write!(f, "{}", err)
+        }
+    }
+}
+
+impl From<io::Error> for LocalError {
+    fn from(error: io::Error) -> Self {
+        LocalError::IoError(error)
+    }
+}
+
+impl From<ParseFloatError> for LocalError {
+    fn from(error: ParseFloatError) -> Self {
+        LocalError::ParseFloatError(error)
+    }
+}
+
+impl From<png::DecodingError> for LocalError {
+    fn from(error: png::DecodingError) -> Self {
+        LocalError::PNGDecodingError(error)
+    }
+}
+
+fn err<T>(payload: &str) -> Result<T>
 {
-    io::Error::new(ErrorKind::Other, payload)
+    Err(LocalError::from(io::Error::new(io::ErrorKind::Other, payload)))
 }
 
 // Read an input PNG and return its size and contents
 // It must be a certain format (8bpp true color no alpha)
 fn read_png(filename: &str)
-    -> io::Result<(u32, u32, Vec<u8>)>
+    -> Result<(u32, u32, Vec<u8>)>
 {
     use png::Decoder;
     use png::Transformations;
@@ -35,10 +75,10 @@ fn read_png(filename: &str)
     let (info, mut reader) = decoder.read_info()?;
 
     if info.bit_depth != png::BitDepth::Eight {
-        return Err(err("color depth must be 8 bpp currently"));
+        return err("color depth must be 8 bpp currently");
     }
     if info.color_type != png::ColorType::RGB {
-        return Err(err("color type must be true color with no alpha"));
+        return err("color type must be true color with no alpha");
     }
 
     let mut data = vec![0u8; info.buffer_size()];
@@ -104,16 +144,11 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
     Vec3::select(val.cmple(min), linear, gamma)
 }
 
-fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8])
+fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8], sdr_white: f32, hdr_max: f32)
 {
-    // 80 nits is the nominal SDR white point
-    // But daylight displays are often set more like 200!
-    // Pick something nice in between.
-    let sdr_white = 160.0;
-    let hdr_white = 1000.0; // max luminance to preserve
-    let hdr_max = 10000.0; // the 1.0 value for BT.2100 linear
+    let bt2100_max = 10000.0; // the 1.0 value for BT.2100 linear
     let scale_in = Vec3::splat(1.0 / 255.0);
-    let scale_scrgb = Vec3::splat(hdr_max / sdr_white);
+    let scale_scrgb = Vec3::splat(bt2100_max / sdr_white);
     let scale_out = Vec3::splat(255.0);
     for y in 0..height {
         for x in 0..width {
@@ -127,7 +162,7 @@ fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8])
             val = pq_to_linear(val);
             val = val * scale_scrgb;
             val = bt2020_to_srgb(val);
-            val = reinhold_tonemap(val, hdr_white);
+            val = reinhold_tonemap(val, hdr_max);
             val = clamp_colors(val);
             val = linear_to_srgb(val);
             val = val * scale_out;
@@ -142,7 +177,7 @@ fn write_png(filename: &str,
              width: u32,
              height: u32,
              data: &[u8])
-   -> io::Result<()>
+   -> Result<()>
 {
     let writer = File::create(filename)?;
 
@@ -162,11 +197,13 @@ fn write_png(filename: &str,
     Ok(())
 }
 
-fn hdrfix(args: ArgMatches) -> io::Result<String> {
+fn hdrfix(args: ArgMatches) -> Result<String> {
     let input_filename = args.value_of("input").unwrap();
     let (width, height, mut data) = read_png(input_filename)?;
 
-    hdr_to_sdr(width, height, &mut data);
+    let sdr_white = args.value_of("sdr-white").unwrap().parse::<f32>()?;
+    let hdr_max = args.value_of("hdr-max").unwrap().parse::<f32>()?;
+    hdr_to_sdr(width, height, &mut data, sdr_white, hdr_max);
 
     let output_filename = args.value_of("output").unwrap();
     write_png(output_filename, width, height, &data)?;
@@ -186,6 +223,17 @@ fn main() {
             .help("Output filename, must be .png.")
             .required(true)
             .index(2))
+        .arg(Arg::with_name("sdr-white")
+            .help("SDR white point, in nits")
+            .long("sdr-white")
+            // 80 nits is the nominal SDR white point
+            // But daylight displays are often set more like 200!
+            // Pick something nice in between.
+            .default_value("160"))
+        .arg(Arg::with_name("hdr-max")
+            .help("Max HDR luminance level to preserve, in nits")
+            .long("hdr-max")
+            .default_value("1000"))
         .get_matches();
 
     match hdrfix(args) {
