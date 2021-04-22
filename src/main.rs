@@ -71,9 +71,18 @@ fn bt2020_to_srgb(val: Vec3) -> Vec3 {
 
 fn reinhold_tonemap(val: Vec3) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
+    //
+    // Do the Reinhold tone mapping on luminance, then scale the RGB
+    // values according to it. Note we may end up out of gamut.
+    let kr = 0.2126;
+    let kg = 0.7152;
+    let kb = 0.0722;
+    let luma = val.x * kr + val.y * kg + val.z * kb;
     let white = 1000.0; // fake a nominal max of 1000 nits in scene
-    let white2 = Vec3::splat(white * white);
-    val * (Vec3::ONE + val / white2) / (Vec3::ONE + val)
+    let white2 = white * white;
+    let scaled_luma = luma * (1.0 + luma / white2) / (1.0 + luma);
+    let scaled_rgb = val * Vec3::splat(scaled_luma / luma);
+    scaled_rgb.clamp(Vec3::ZERO, Vec3::ONE)
 }
 
 fn linear_to_srgb(val: Vec3) -> Vec3 {
@@ -87,8 +96,7 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8])
 {
     // 80 nits is the nominal SDR white point
-    // but daytime monitors likely set more like 200
-    let sdr_white = 200.0;
+    let sdr_white = 80.0;
     for y in 0..height {
         let scale_in = Vec3::splat(1.0 / 255.0);
         let scale_hdr = Vec3::splat(10000.0 / sdr_white);
