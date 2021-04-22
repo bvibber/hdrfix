@@ -79,15 +79,26 @@ fn bt2020_to_srgb(val: Vec3) -> Vec3 {
     matrix.mul_vec3(val)
 }
 
+const KR: f32 = 0.2126;
+const KG: f32 = 0.7152;
+const KB: f32 = 0.0722;
+
+fn luma_srgb(val: Vec3) -> f32 {
+    val.x * KR + val.y * KG + val.z * KB
+}
+
+fn apply_gamma(val: Vec3, gamma: f32) -> Vec3 {
+    let luma_in = luma_srgb(val);
+    let luma_out = luma_in.powf(gamma);
+    val * luma_out / luma_in
+}
+
 fn reinhold_tonemap(val: Vec3, white: f32) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     // Do the Reinhold tone mapping on luminance, then scale the RGB
     // values according to it. Note we may end up out of gamut.
-    let kr = 0.2126;
-    let kg = 0.7152;
-    let kb = 0.0722;
-    let luma = val.x * kr + val.y * kg + val.z * kb;
+    let luma = luma_srgb(val);
     let white2 = white * white;
     let scaled_luma = luma * (1.0 + luma / white2) / (1.0 + luma);
     let scaled_rgb = val * Vec3::splat(scaled_luma / luma);
@@ -103,7 +114,6 @@ fn clamp_colors(val: Vec3) -> Vec3 {
     } else {
         val
     }
-
 }
 
 fn linear_to_srgb(val: Vec3) -> Vec3 {
@@ -114,7 +124,7 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
     Vec3::select(val.cmple(min), linear, gamma)
 }
 
-fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8], sdr_white: f32, hdr_max: f32)
+fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
 {
     let bt2100_max = 10000.0; // the 1.0 value for BT.2100 linear
     let scale_in = Vec3::splat(1.0 / 255.0);
@@ -132,6 +142,7 @@ fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8], sdr_white: f32, hdr_max:
             val = pq_to_linear(val);
             val = val * scale_scrgb;
             val = bt2020_to_srgb(val);
+            val = apply_gamma(val, gamma);
             val = reinhold_tonemap(val, hdr_max);
             val = clamp_colors(val);
             val = linear_to_srgb(val);
@@ -173,7 +184,8 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
 
     let sdr_white = args.value_of("sdr-white").unwrap().parse::<f32>()?;
     let hdr_max = args.value_of("hdr-max").unwrap().parse::<f32>()?;
-    hdr_to_sdr(width, height, &mut data, sdr_white, hdr_max);
+    let gamma = args.value_of("gamma").unwrap().parse::<f32>()?;
+    hdr_to_sdr(width, height, &mut data, sdr_white, hdr_max, gamma);
 
     let output_filename = args.value_of("output").unwrap();
     write_png(output_filename, width, height, &data)?;
@@ -197,13 +209,15 @@ fn main() {
             .help("SDR white point, in nits")
             .long("sdr-white")
             // 80 nits is the nominal SDR white point
-            // But daylight displays are often set more like 200!
-            // Pick something nice in between.
-            .default_value("160"))
+            .default_value("80"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level to preserve, in nits")
             .long("hdr-max")
             .default_value("1000"))
+        .arg(Arg::with_name("gamma")
+            .help("Gamma curve to apply on linear luminance values")
+            .long("gamma")
+            .default_value("1.4"))
         .get_matches();
 
     match hdrfix(args) {
