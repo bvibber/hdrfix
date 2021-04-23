@@ -213,7 +213,7 @@ fn main() {
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level to preserve, in nits")
             .long("hdr-max")
-            .default_value("1000"))
+            .default_value("400"))
         .arg(Arg::with_name("gamma")
             .help("Gamma curve to apply on linear luminance values")
             .long("gamma")
