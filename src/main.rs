@@ -1,3 +1,6 @@
+mod jpegxr_sys;
+mod jpegxr;
+
 use std::fs::File;
 use std::io;
 use std::num;
@@ -7,11 +10,6 @@ use glam::f32::{Mat3, Vec3};
 
 // CLI bits
 use clap::{Arg, App, ArgMatches};
-
-// Reading and writing files
-use mtpng::{CompressionLevel, Header};
-use mtpng::encoder::{Encoder, Options};
-use mtpng::ColorType;
 
 // Error bits
 use thiserror::Error;
@@ -56,6 +54,24 @@ fn read_png(filename: &str)
 
     Ok((info.width, info.height, data))
 }
+
+/*
+fn read_jxr(filename: &str)
+  -> Result<(u32, u32, Vec<u16>)>
+{
+    use jpegxr::Decoder;
+    use jpegxr::PixelFormat;
+
+    let mut decoder = Decoder::new(File::open(filename)?);
+
+    let (info, mut reader) = decoder.read_info()?;
+
+    let mut data = vec![0u16; info.buffer_size()];
+    reader.next_frame(&mut data)?;
+
+    Ok((info.width, info.height, data))
+}
+*/
 
 fn pq_to_linear(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
@@ -106,14 +122,15 @@ fn reinhold_tonemap(val: Vec3, white: f32) -> Vec3 {
 }
 
 fn clamp_colors(val: Vec3) -> Vec3 {
-    // If any color elements went outside the color gamut, scale them back in.
-    // This will preserve color at the cost of contrast
+    // If any color elements went outside the color gamut, desaturate them.
+    // This will preserve contrast at the cost of color
     let max = val.max_element();
     if max > 1.0 {
-        val / Vec3::splat(max)
+        let luma = Vec3::splat(luma_srgb(val));
+        val + ((max - 1.0) / max) * (luma - val)
     } else {
         val
-    }
+    }.min(Vec3::ONE).max(Vec3::ZERO)
 }
 
 fn linear_to_srgb(val: Vec3) -> Vec3 {
@@ -160,6 +177,10 @@ fn write_png(filename: &str,
              data: &[u8])
    -> Result<()>
 {
+    use mtpng::{CompressionLevel, Header};
+    use mtpng::encoder::{Encoder, Options};
+    use mtpng::ColorType;
+
     let writer = File::create(filename)?;
 
     let mut options = Options::new();
@@ -208,12 +229,13 @@ fn main() {
         .arg(Arg::with_name("sdr-white")
             .help("SDR white point, in nits")
             .long("sdr-white")
-            // 80 nits is the nominal SDR white point
+            // 80 nits is the nominal SDR white point in a dark room.
+            // Bright rooms often set SDR balance point brighter!
             .default_value("80"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level to preserve, in nits")
             .long("hdr-max")
-            .default_value("400"))
+            .default_value("10000"))
         .arg(Arg::with_name("gamma")
             .help("Gamma curve to apply on linear luminance values")
             .long("gamma")

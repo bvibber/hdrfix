@@ -41,11 +41,11 @@ hdrfix --help
 ```
 
 Adjustable parmeters are `--gamma`, `--sdr-white` and `--hdr-max`, all of which take numeric arguments:
-* `--sdr-white=N` linearly scales the input signal such that a signal representing standard dark-room SDR white point of 80 nits is scaled up to the given value instead. The default is `80`, passing through the standard signal.
-* `--gamma=N` applies a power curve against the linear luminance signal before compressing the dynamic range to SDR. The default is `1.4`, which increases contrast pleasantly to compensate for the loss of contrast from the tone-mapping.
-* `--hdr-max=N` sets the maximum luminance level for the Reinhold tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of poorer contrast in highlights. The default is `400` nits; anything brighter than that will be capped, and may be reduced in brightness to stay in gamut.
+* `--sdr-white=N` linearly scales the input signal such that a signal representing standard dark-room SDR white point of 80 nits is scaled up to the given value instead. The default is `80`, passing through the standard signal. A higher value will darken the image linearly.
+* `--gamma=N` applies a power curve against the linear luminance signal before compressing the dynamic range to SDR. The default is `1.0`, which is linear. A modest gamma of `1.2` or `1.4` looks nice on many images, boosting contrast.
+* `--hdr-max=N` sets the maximum luminance level for the Reinhold tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of poorer contrast in highlights. The default is `1000` nits; anything brighter than that will be capped.
 
-I found a gamma of `1.4` and HDR max of `400` to be pleasing to the eye on several sample screen captures, but they're easy to adjust as needed!
+
 
 # Todo / roadmap
 
@@ -53,9 +53,10 @@ Definitely/short-term:
 * check transform performance
 * use Vec3A for speed if it helps
 * auto-output-filename feature to make it easier to use on live folders
-* add JPEG XR input (should reduce banding in sky vs using the PNGs)
+* [IN PROGRESS] add JPEG XR input (should reduce banding in sky vs using the PNGs)
 * add JPEG output
 * add compression params for JPEG output
+* make a InputStream<R: Read+Seek> and OutputStream<W: Write+Seek>; remember the methods are for the library to use, and for us to provide. the struct must maintain lifetime of the underlying Read/Write, and can return access to its internal Stream struct, which is not copyable.
 
 Probably:
 * 'folder watch' feature to convert all new .jxr files appearing in a folder while we run with default parameters
@@ -64,3 +65,19 @@ Maybe/later/no rush:
 * a basic GUI with HDR and SDR side-by-side view
 * GUI sliders for the adjustable parameters
 * drag/drop and open/save dialog support
+
+# Building
+
+```
+cargo build --release
+```
+
+Requires Rust to be installed ()
+
+# Updating jpegxr library bindings
+
+JPEG XR input is read using Microsoft's BSD-licensed libjpegxr, which I've bundled for now but will later split out to its own crate for ease of reuse.
+
+bindgen is used to create a low-level Rust interface to the C library; the bindings are created automatically as part of the build process
+
+You must install LLVM + Clang to complete a build; on Windows you can get a release from https://github.com/llvm/llvm-project/releases/tag/llvmorg-12.0.0 or whatever the current release is. On Linux or Mac, use the system or user-preferred package manager.

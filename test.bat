@@ -3,6 +3,7 @@ call :convert closeup
 call :convert cloud
 call :convert newyork
 call :convert oregon
+call :convert portland
 call :convert sanfran
 call :convert spitfire
 call :convert usbank
