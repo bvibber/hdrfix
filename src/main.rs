@@ -126,8 +126,16 @@ fn clamp_colors(val: Vec3) -> Vec3 {
     // This will preserve contrast at the cost of color
     let max = val.max_element();
     if max > 1.0 {
+        // Desaturate while attempting to maintain luminance.
+        //
+        // "Equation 3" from:
+        // Color Correction for Tone Mapping
+        // R. Mantiuk1,3, R. Mantiuk2, A. Tomaszewska1and W. Heidrich
+        // EUROGRAPHICS 2009
+        // https://www.cl.cam.ac.uk/~rkm38/pdfs/mantiuk09cctm.pdf
         let luma = Vec3::splat(luma_srgb(val));
-        val + ((max - 1.0) / max) * (luma - val)
+        let desaturation = Vec3::splat(1.0 - (max - 1.0) / max);
+        ((val / luma - Vec3::ONE) * desaturation + Vec3::ONE) * luma
     } else {
         val
     }.min(Vec3::ONE).max(Vec3::ZERO)
