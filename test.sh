@@ -1,5 +1,5 @@
 convert() {
-    cargo run --release samples/"$1".png samples/"$1"-sdr.png
+    cargo -q run --release samples/"$1".png samples/"$1"-sdr.png
 }
 
 convert burbank

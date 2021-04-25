@@ -231,7 +231,7 @@ fn main() {
             .long("sdr-white")
             // 80 nits is the nominal SDR white point in a dark room.
             // Bright rooms often set SDR balance point brighter!
-            .default_value("80"))
+            .default_value("100"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level to preserve, in nits")
             .long("hdr-max")
@@ -239,7 +239,7 @@ fn main() {
         .arg(Arg::with_name("gamma")
             .help("Gamma curve to apply on linear luminance values")
             .long("gamma")
-            .default_value("1.4"))
+            .default_value("1.2"))
         .get_matches();
 
     match hdrfix(args) {

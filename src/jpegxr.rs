@@ -1,6 +1,8 @@
-use std::io::{self, Read, Write};
-use std::ffi::{CStr, CString, NulError, c_void};
-use std::mem::{self, MaybeUninit};
+#![allow(dead_code)]
+#![allow(non_upper_case_globals)]
+
+use std::io::{self};
+use std::ffi::{CString, NulError};
 
 use thiserror::Error;
 
@@ -93,7 +95,6 @@ pub enum Channel {
     Blue,
     Alpha
 }
-use Channel::*;
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub struct PixelFormatHash {
@@ -203,8 +204,8 @@ impl ColorFormat {
             COLORFORMAT_YUV_444 => Ok(ColorFormat::YUV444),
             COLORFORMAT_CMYK => Ok(ColorFormat::CMYK),
             COLORFORMAT_NCOMPONENT => Ok(ColorFormat::NComponent),
-            COLORFORMAT_RGB => Ok(ColorFormat::RGB),
-            COLORFORMAT_RGBE => Ok(ColorFormat::RGBE),
+            COLORFORMAT_CF_RGB => Ok(ColorFormat::RGB),
+            COLORFORMAT_CF_RGBE => Ok(ColorFormat::RGBE),
             _ => Err(InvalidData)
         }
     }
@@ -316,7 +317,7 @@ impl CodecFactory {
         }
     }
 
-    fn create_decoder(&self, iid: IID) -> Result<ImageDecode> {
+    fn create_decoder(&self, _iid: IID) -> Result<ImageDecode> {
         Err(NotYetImplemented)
     }
 
