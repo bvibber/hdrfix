@@ -138,7 +138,7 @@ fn clamp_colors(val: Vec3) -> Vec3 {
         ((val / luma - Vec3::ONE) * desaturation + Vec3::ONE) * luma
     } else {
         val
-    }.min(Vec3::ONE).max(Vec3::ZERO)
+    }
 }
 
 fn linear_to_srgb(val: Vec3) -> Vec3 {
@@ -239,7 +239,7 @@ fn main() {
             .long("sdr-white")
             // 80 nits is the nominal SDR white point in a dark room.
             // Bright rooms often set SDR balance point brighter!
-            .default_value("100"))
+            .default_value("80"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level to preserve, in nits")
             .long("hdr-max")
@@ -247,7 +247,7 @@ fn main() {
         .arg(Arg::with_name("gamma")
             .help("Gamma curve to apply on linear luminance values")
             .long("gamma")
-            .default_value("1.2"))
+            .default_value("1.0"))
         .get_matches();
 
     match hdrfix(args) {

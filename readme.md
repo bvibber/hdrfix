@@ -43,7 +43,7 @@ hdrfix --help
 Adjustable parmeters are `--gamma`, `--sdr-white` and `--hdr-max`, all of which take numeric arguments:
 * `--sdr-white=N` linearly scales the input signal such that a signal representing standard dark-room SDR white point of 80 nits is scaled up to the given value instead. The default is `80`, passing through the standard signal. A higher value will darken the image linearly.
 * `--gamma=N` applies a power curve against the linear luminance signal before compressing the dynamic range to SDR. The default is `1.0`, which is linear. A modest gamma of `1.2` or `1.4` looks nice on many images, boosting contrast.
-* `--hdr-max=N` sets the maximum luminance level for the Reinhold tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of poorer contrast in highlights. The default is `1000` nits; anything brighter than that will be capped.
+* `--hdr-max=N` sets the maximum luminance level for the Reinhold tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of poorer contrast in highlights. The default is `10000` nits; anything brighter than that will be capped.
 
 
 

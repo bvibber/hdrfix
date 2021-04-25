@@ -12,5 +12,5 @@ exit /b %ERRORLEVEL%
 
 
 :convert
-cargo -q run --release samples\%1.png samples\%1-sdr.png
+cargo -q run --release -- --sdr-white=120 --gamma=1.2 samples\%1.png samples\%1-sdr.png
 exit /b 0
