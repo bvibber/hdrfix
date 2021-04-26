@@ -1,8 +1,8 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 
-use std::io::{self};
-use std::ffi::{CString, NulError};
+use std::io::{self, Read, Seek, Write};
+use std::ffi::{CString, NulError, c_void};
 
 use thiserror::Error;
 
@@ -259,6 +259,72 @@ impl PixelInfo {
 }
 */
 
+pub struct InputStream<R: Read + Seek> {
+    state: *mut InputStreamState<R>
+}
+
+// The state needs to be fixed in memory for C
+// for the duration of use, hence the box.
+struct InputStreamState<R: Read + Seek> {
+    raw: WMPStream,
+    reader: R
+}
+
+impl<R> InputStream<R> where R: Read + Seek {
+    pub fn create(reader: R) -> Result<Self> {
+        unsafe {
+            let state = Box::into_raw(Box::new(InputStreamState {
+                raw: WMPStream {
+                    state: WMPStream__bindgen_ty_1 {
+                        pvObj: std::ptr::null_mut(),
+                    },
+                    fMem: 0,
+                    Close: Some(InputStreamState::<R>::input_stream_close),
+                    EOS: Some(InputStreamState::<R>::input_stream_eos),
+                    Read: Some(InputStreamState::<R>::input_stream_read),
+                    Write: Some(InputStreamState::<R>::input_stream_write),
+                    SetPos: Some(InputStreamState::<R>::input_stream_set_pos),
+                    GetPos: Some(InputStreamState::<R>::input_stream_get_pos),
+                },
+                reader: reader
+            }));
+            (*state).raw.state.pvObj = std::mem::transmute(state);
+            Ok(Self {
+                state: state
+            })
+        }
+    }
+}
+
+impl<R> InputStreamState<R> where R: Read + Seek {
+    unsafe extern "C" fn input_stream_close(me: *mut *mut WMPStream) -> ERR {
+        // do nothing for now
+        // close implicity after end of operation when the Read is dropped
+        WMP_errSuccess as ERR
+    }
+
+    unsafe extern "C" fn input_stream_eos(me: *mut WMPStream) -> i32 {
+        // can use seek for this. sigh.
+        false as i32
+    }
+
+    unsafe extern "C" fn input_stream_read(me: *mut WMPStream, dest: *mut c_void, cb: usize) -> ERR {
+        WMP_errFileIO as ERR
+    }
+
+    unsafe extern "C" fn input_stream_write(me: *mut WMPStream, dest: *const c_void, cb: usize) -> ERR {
+        WMP_errFileIO as ERR
+    }
+
+    unsafe extern "C" fn input_stream_set_pos(me: *mut WMPStream, off_pos: usize) -> ERR {
+        WMP_errFileIO as ERR
+    }
+
+    unsafe extern "C" fn input_stream_get_pos(me: *mut WMPStream, off_pos: *mut usize) -> ERR {
+        WMP_errFileIO as ERR
+    }
+}
+
 struct Factory {
     raw: *mut PKFactory
 }
@@ -276,21 +342,27 @@ impl Factory {
 
     /*
     pub fn stream_from_filename(&mut self, filename: &str, mode: &str) -> Result<Stream> {
-        let filename_bytes = CString::new(filename)?;
-        let mode_bytes = CString::new(mode)?;
-        let mut ptr = std::ptr::null_mut();
-        call((*self.raw).CreateStreamFromFilename.unwrap()(
-            &mut ptr,
-            filename_bytes.as_ptr(),
-            mode_bytes.as_ptr()
-        ))?;
-        Ok(Stream {
-            raw: ptr
-        })
+        unsafe {
+            let filename_bytes = CString::new(filename)?;
+            let mode_bytes = CString::new(mode)?;
+            let mut ptr = std::ptr::null_mut();
+            call((*self.raw).CreateStreamFromFilename.unwrap()(
+                &mut ptr,
+                filename_bytes.as_ptr(),
+                mode_bytes.as_ptr()
+            ))?;
+            Ok(Stream {
+                raw: ptr
+            })
+        }
     }
     */
 
-    //pub fn stream_from_memory(&mut self)
+    //pub fn stream_from_memory(&mut self, memory: [u8]) -> Result<Stream> {}
+
+    pub fn input_stream<R: Read + Seek>(reader: R) -> Result<InputStream<R>> {
+        Err(NotYetImplemented)
+    }
 }
 
 impl Drop for Factory {
