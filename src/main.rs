@@ -167,8 +167,8 @@ fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8], sdr_white: f32, hdr_max:
             val = pq_to_linear(val);
             val = val * scrgb_max;
             val = bt2020_to_srgb(val);
-            val = apply_gamma(val, gamma);
             val = reinhold_tonemap(val, luminance_max);
+            val = apply_gamma(val, gamma);
             val = clamp_colors(val);
             val = linear_to_srgb(val);
             val = val * scale_8bpp;
@@ -245,7 +245,7 @@ fn main() {
             .long("hdr-max")
             .default_value("10000"))
         .arg(Arg::with_name("gamma")
-            .help("Gamma curve to apply on linear luminance values")
+            .help("Gamma curve to apply on tone-mapped luminance values")
             .long("gamma")
             .default_value("1.0"))
         .get_matches();

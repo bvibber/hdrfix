@@ -3,7 +3,7 @@
 
 use std::convert::TryFrom;
 use std::io::{self, Read, Seek, SeekFrom};
-use std::ffi::{CString, NulError, c_void};
+use std::ffi::{NulError, c_void};
 
 use thiserror::Error;
 

@@ -42,7 +42,7 @@ hdrfix --help
 
 Adjustable parmeters are `--gamma`, `--sdr-white` and `--hdr-max`, all of which take numeric arguments:
 * `--sdr-white=N` linearly scales the input signal such that a signal representing standard dark-room SDR white point of 80 nits is scaled up to the given value instead. The default is `80`, passing through the standard signal. A higher value will darken the image linearly.
-* `--gamma=N` applies a power curve against the linear luminance signal before compressing the dynamic range to SDR. The default is `1.0`, which is linear. A modest gamma of `1.2` or `1.4` looks nice on many images, boosting contrast.
+* `--gamma=N` applies a power curve against the tone-mapped luminance signal before color correction and saving. The default is `1.0`, which is linear. A modest gamma of `1.2` or `1.4` looks nice on many images, boosting contrast.
 * `--hdr-max=N` sets the maximum luminance level for the Reinhold tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of poorer contrast in highlights. The default is `10000` nits; anything brighter than that will be capped.
 
 
@@ -51,7 +51,7 @@ Adjustable parmeters are `--gamma`, `--sdr-white` and `--hdr-max`, all of which 
 
 Definitely/short-term:
 * check transform performance
-* use Vec3A for speed if it helps
+* use Vec3A or Vec4 for speed if it helps
 * auto-output-filename feature to make it easier to use on live folders
 * [IN PROGRESS] add JPEG XR input (should reduce banding in sky vs using the PNGs)
 * add JPEG output
