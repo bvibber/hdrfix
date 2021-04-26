@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 #![allow(non_upper_case_globals)]
 
-use std::io::{self, Read, Seek, Write};
+use std::convert::TryFrom;
+use std::io::{self, Read, Seek, SeekFrom};
 use std::ffi::{CString, NulError, c_void};
 
 use thiserror::Error;
@@ -166,16 +167,16 @@ static GUID_MAP: [(&'static GUID, PixelFormat); 23] = unsafe {
 
 impl PixelFormat {
 
-    fn from_guid(&guid: &GUID) -> Option<Self> {
+    fn from_guid(&guid: &GUID) -> Result<Self> {
         for (&map_guid, map_val) in &GUID_MAP {
             if guid == map_guid {
-                return Some(*map_val);
+                return Ok(*map_val);
             }
         }
-        None
+        Err(InvalidData)
     }
 
-    pub fn from_hash(hash: u8) -> Option<PixelFormat> {
+    pub fn from_hash(hash: u8) -> Result<PixelFormat> {
         unsafe {
             let guid = GetPixelFormatFromHash(hash);
             PixelFormat::from_guid(&*guid)
@@ -259,116 +260,97 @@ impl PixelInfo {
 }
 */
 
-pub struct InputStream<R: Read + Seek> {
-    state: *mut InputStreamState<R>
-}
 
-// The state needs to be fixed in memory for C
-// for the duration of use, hence the box.
-struct InputStreamState<R: Read + Seek> {
+struct InputStream<R: Read + Seek> {
     raw: WMPStream,
-    reader: R
+    reader: R,
+    length: u64
 }
 
 impl<R> InputStream<R> where R: Read + Seek {
-    pub fn create(reader: R) -> Result<Self> {
+    fn create(mut reader: R) -> Result<*mut Self> {
+        let start = reader.stream_position()?;
+        reader.seek(SeekFrom::End(0))?;
+        let length = reader.stream_position()?;
+        reader.seek(SeekFrom::Start(start))?;
+
         unsafe {
-            let state = Box::into_raw(Box::new(InputStreamState {
+            let state = Box::into_raw(Box::new(Self {
                 raw: WMPStream {
                     state: WMPStream__bindgen_ty_1 {
                         pvObj: std::ptr::null_mut(),
                     },
                     fMem: 0,
-                    Close: Some(InputStreamState::<R>::input_stream_close),
-                    EOS: Some(InputStreamState::<R>::input_stream_eos),
-                    Read: Some(InputStreamState::<R>::input_stream_read),
-                    Write: Some(InputStreamState::<R>::input_stream_write),
-                    SetPos: Some(InputStreamState::<R>::input_stream_set_pos),
-                    GetPos: Some(InputStreamState::<R>::input_stream_get_pos),
+                    Close: Some(Self::input_stream_close),
+                    EOS: Some(Self::input_stream_eos),
+                    Read: Some(Self::input_stream_read),
+                    Write: Some(Self::input_stream_write),
+                    SetPos: Some(Self::input_stream_set_pos),
+                    GetPos: Some(Self::input_stream_get_pos),
                 },
-                reader: reader
+                reader: reader,
+                length: length
             }));
             (*state).raw.state.pvObj = std::mem::transmute(state);
-            Ok(Self {
-                state: state
-            })
+            Ok(state)
         }
     }
-}
 
-impl<R> InputStreamState<R> where R: Read + Seek {
+    unsafe fn get_state(me: *mut WMPStream) -> *mut Self {
+        std::mem::transmute((*me).state.pvObj)
+    }
+
     unsafe extern "C" fn input_stream_close(me: *mut *mut WMPStream) -> ERR {
-        // do nothing for now
-        // close implicity after end of operation when the Read is dropped
+        let state = Self::get_state(*me);
+        let boxed = Box::from_raw(state);
+        drop(boxed);
+        *me = std::ptr::null_mut();
         WMP_errSuccess as ERR
     }
 
     unsafe extern "C" fn input_stream_eos(me: *mut WMPStream) -> i32 {
-        // can use seek for this. sigh.
-        false as i32
+        let state = Self::get_state(me);
+        match (*state).reader.stream_position() {
+            Ok(pos) => (pos == (*state).length) as i32,
+            Err(_) => true as i32
+        }
     }
 
     unsafe extern "C" fn input_stream_read(me: *mut WMPStream, dest: *mut c_void, cb: usize) -> ERR {
-        WMP_errFileIO as ERR
+        let state = Self::get_state(me);
+        let bytes: *mut u8 = std::mem::transmute(dest);
+        let dest_slice = std::slice::from_raw_parts_mut(bytes, cb);
+        match (*state).reader.read_exact(dest_slice) {
+            Ok(_) => WMP_errSuccess as ERR,
+            Err(_) => WMP_errFileIO as ERR
+        }
     }
 
-    unsafe extern "C" fn input_stream_write(me: *mut WMPStream, dest: *const c_void, cb: usize) -> ERR {
+    unsafe extern "C" fn input_stream_write(_me: *mut WMPStream, _dest: *const c_void, _cb: usize) -> ERR {
         WMP_errFileIO as ERR
     }
 
     unsafe extern "C" fn input_stream_set_pos(me: *mut WMPStream, off_pos: usize) -> ERR {
-        WMP_errFileIO as ERR
+        let state = Self::get_state(me);
+        match (*state).reader.seek(SeekFrom::Start(off_pos as u64)) {
+            Ok(_) => WMP_errSuccess as ERR,
+            Err(_) => WMP_errFileIO as ERR
+        }
     }
 
     unsafe extern "C" fn input_stream_get_pos(me: *mut WMPStream, off_pos: *mut usize) -> ERR {
-        WMP_errFileIO as ERR
-    }
-}
-
-struct Factory {
-    raw: *mut PKFactory
-}
-
-impl Factory {
-    fn create() -> Result<Factory> {
-        unsafe {
-            let mut ptr = std::ptr::null_mut();
-            call(PKCreateFactory(&mut ptr, PK_SDK_VERSION))?;
-            Ok(Factory {
-                raw: ptr
-            })
-        }
-    }
-
-    /*
-    pub fn stream_from_filename(&mut self, filename: &str, mode: &str) -> Result<Stream> {
-        unsafe {
-            let filename_bytes = CString::new(filename)?;
-            let mode_bytes = CString::new(mode)?;
-            let mut ptr = std::ptr::null_mut();
-            call((*self.raw).CreateStreamFromFilename.unwrap()(
-                &mut ptr,
-                filename_bytes.as_ptr(),
-                mode_bytes.as_ptr()
-            ))?;
-            Ok(Stream {
-                raw: ptr
-            })
-        }
-    }
-    */
-
-    //pub fn stream_from_memory(&mut self, memory: [u8]) -> Result<Stream> {}
-
-    pub fn input_stream<R: Read + Seek>(reader: R) -> Result<InputStream<R>> {
-        Err(NotYetImplemented)
-    }
-}
-
-impl Drop for Factory {
-    fn drop(&mut self) {
-        unsafe {
-            (*self.raw).Release.unwrap()(&mut self.raw);
+        let state = Self::get_state(me);
+        match (*state).reader.stream_position() {
+            Ok(pos) => {
+                match usize::try_from(pos) {
+                    Ok(out) => {
+                        *off_pos = out;
+                        WMP_errSuccess as ERR
+                    },
+                    Err(_) => WMP_errFileIO as ERR
+                }
+            },
+            Err(_) => WMP_errFileIO as ERR
         }
     }
 }
@@ -389,18 +371,14 @@ impl CodecFactory {
         }
     }
 
-    fn create_decoder(&self, _iid: IID) -> Result<ImageDecode> {
-        Err(NotYetImplemented)
-    }
-
-    fn create_decoder_from_file(&self, filename: &str) -> Result<ImageDecode> {
+    fn create_decoder<R: Read + Seek>(&self, reader: R) -> Result<ImageDecode<R>> {
         unsafe {
-            let bytes = CString::new(filename)?;
-            let mut ptr = std::ptr::null_mut();
-            call((*self.raw).CreateDecoderFromFile.unwrap()(bytes.as_ptr(), &mut ptr))?;
-            Ok(ImageDecode {
-                raw: ptr
-            })
+            let stream = InputStream::create(reader)?;
+            let mut codec: *mut PKImageDecode = std::ptr::null_mut();
+            call((*self.raw).CreateCodec.unwrap()(&IID_PKImageWmpDecode, std::mem::transmute(&mut codec)))?;
+    
+            call((*codec).Initialize.unwrap()(codec, &mut (*stream).raw))?;
+            Err(NotYetImplemented)
         }
     }
 }
@@ -414,72 +392,122 @@ impl Drop for CodecFactory {
 }
 
 
-struct ImageDecode {
-    raw: *mut PKImageDecode
+pub struct Rect {
+    raw: PKRect
 }
 
-// @todo implement ImageEncode
-// @todo implement FormatConverter
+impl Rect {
+    pub fn new(x: i32, y: i32, width: i32, height: i32) -> Self {
+        Self {
+            raw: PKRect {
+                X: x,
+                Y: y,
+                Width: width,
+                Height: height
+            }
+        }
+    }
 
-struct Stream {
-    raw: *mut WMPStream
+    pub fn get_x(&self) -> i32 {
+        return self.raw.X;
+    }
+
+    pub fn get_y(&self) -> i32 {
+        return self.raw.Y;
+    }
+
+    pub fn get_width(&self) -> i32 {
+        return self.raw.Width;
+    }
+
+    pub fn get_height(&self) -> i32 {
+        return self.raw.Height;
+    }
 }
 
-impl Stream {
-    /*
-    fn eos(&mut self) -> bool {
-        (*self.raw).EOS.unwrap()(self.raw) != 0
-    }
-
-    // Note using the std::io::Write interface for dest would
-    // introduce an extra copy if you're reading into a large
-    // memory buffer.
-    //
-    // note also this interface has no way to report the
-    // number of bytes read, so if asked to read beyond the
-    // end of the file there may be uninitialized bytes at
-    // end
-    fn read(&mut self, dest: &mut [u8]) -> Result<()> {
-        call((*self.raw).Read.unwrap()(
-            self.raw,
-            dest.as_mut_ptr() as *mut c_void,
-            dest.len()
-        ))?;
-        Ok(())
-    }
-
-    fn write(&mut self, source: &[u8]) -> Result<()> {
-        call((*self.raw).Write.unwrap()(
-            self.raw,
-            source.as_ptr() as *const c_void,
-            source.len()
-        ))?;
-        Ok(())
-    }
-
-    fn set_pos(&mut self, off_pos: usize) -> Result<()> {
-        call((*self.raw).SetPos.unwrap()(
-            self.raw,
-            off_pos
-        ))?;
-        Ok(())
-    }
-
-    fn get_pos(&mut self) -> Result<usize> {
-        let mut off_pos: usize;
-        call((*self.raw).GetPos.unwrap()(
-            self.raw,
-            &mut off_pos
-        ))?;
-        Ok(off_pos)
-    }
-    */
+pub struct ImageDecode<R: Read + Seek> {
+    raw: *mut PKImageDecode,
+    stream: *mut InputStream<R>,
 }
 
-/*
-impl Drop for Stream {
+impl<R> ImageDecode<R> where R: Read + Seek {
+    pub fn get_pixel_format(&mut self) -> Result<PixelFormat> {
+        unsafe {
+            let mut guid: GUID = std::mem::zeroed();
+            call((*self.raw).GetPixelFormat.unwrap()(self.raw, &mut guid))?;
+            PixelFormat::from_guid(&guid)
+        }
+    }
+
+    pub fn get_size(&mut self) -> Result<(i32, i32)> {
+        unsafe {
+            let mut width: i32 = 0;
+            let mut height: i32 = 0;
+            call((*self.raw).GetSize.unwrap()(self.raw, &mut width, &mut height))?;
+            Ok((width, height))
+        }
+    }
+
+    pub fn get_resolution(&mut self) -> Result<(f32, f32)> {
+        unsafe {
+            let mut horiz: f32 = 0.0;
+            let mut vert: f32 = 0.0;
+            call((*self.raw).GetResolution.unwrap()(self.raw, &mut horiz, &mut vert))?;
+            Ok((horiz, vert))
+        }
+    }
+
+    pub fn get_color_context(&mut self) -> Result<(u8, u32)> {
+        // ???
+        unsafe {
+            let mut a: u8 = 0;
+            let mut b: u32 = 0;
+            call((*self.raw).GetColorContext.unwrap()(self.raw, &mut a, &mut b))?;
+            Ok((a, b))
+        }
+    }
+
+    pub fn get_descriptive_metadata(&mut self) -> Result<()> {
+        Err(NotYetImplemented)
+    }
+
+    pub fn get_raw_stream(&mut self) -> Result<&mut R> {
+        unsafe {
+            let mut stream: *mut WMPStream = std::ptr::null_mut();
+            call((*self.raw).GetRawStream.unwrap()(self.raw, &mut stream))?;
+            let state = InputStream::<R>::get_state(stream);
+            Ok(&mut (*state).reader)
+        }
+    }
+
+    pub fn copy(&mut self, rect: Rect, dest: &mut [u8], stride: u32) -> Result<()> {
+        unsafe {
+            call((*self.raw).Copy.unwrap()(self.raw, &rect.raw, dest.as_mut_ptr(), stride))?;
+            Ok(())
+        }
+    }
+
+    pub fn get_frame_count(&mut self) -> Result<u32> {
+        unsafe {
+            let mut frames: u32 = 0;
+            call((*self.raw).GetFrameCount.unwrap()(self.raw, &mut frames))?;
+            Ok(frames)
+        }
+    }
+
+    pub fn select_frame(&mut self, frame: u32) -> Result<()> {
+        unsafe {
+            call((*self.raw).SelectFrame.unwrap()(self.raw, frame))?;
+            Ok(())
+        }
+    }
+}
+
+impl<R> Drop for ImageDecode<R> where R: Read + Seek {
     fn drop(&mut self) {
-        (*self.raw).Close.unwrap()(&mut self.raw);
+        unsafe {
+            // This will call through to close the stream.
+            (*self.raw).Release.unwrap()(&mut self.raw);
+        }
     }
 }
-*/
