@@ -269,6 +269,7 @@ struct InputStream<R: Read + Seek> {
 
 impl<R> InputStream<R> where R: Read + Seek {
     fn create(mut reader: R) -> Result<*mut Self> {
+        // Get length so we can calculate EOS. Assumes static files.
         let start = reader.stream_position()?;
         reader.seek(SeekFrom::End(0))?;
         let length = reader.stream_position()?;
