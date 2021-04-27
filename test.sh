@@ -7,6 +7,7 @@ convert closeup
 convert cloud
 convert newyork
 convert oregon
+convert panel
 convert portland
 convert sanfran
 convert spitfire
