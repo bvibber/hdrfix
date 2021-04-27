@@ -162,18 +162,14 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
     Vec3::select(val.cmple(min), linear, gamma)
 }
 
-fn hdr_to_sdr_pixel(data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
+const BT2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
+
+fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, sdr_white: f32, hdr_max: f32, gamma: f32) -> Vec3
 {
-    let scale_8bpp = 255.0;
-    let bt2100_max = 10000.0; // the 1.0 value for BT.2100 linear
-    let scrgb_max = bt2100_max / sdr_white;
+    let scrgb_max = BT2100_MAX / sdr_white;
     let luminance_max = hdr_max / sdr_white;
 
-    // Read the original pixel value
-    let r1 = data[0] as f32;
-    let g1 = data[1] as f32;
-    let b1 = data[2] as f32;
-    let mut val = Vec3::new(r1, g1, b1) / scale_8bpp;
+    let mut val = rgb_bt2100;
     val = pq_to_linear(val);
     val = val * scrgb_max;
     val = bt2020_to_srgb(val);
@@ -181,15 +177,24 @@ fn hdr_to_sdr_pixel(data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
     val = apply_gamma(val, gamma);
     val = clamp_colors(val);
     val = linear_to_srgb(val);
-    val = val * scale_8bpp;
-    data[0] = val.x as u8;
-    data[1] = val.y as u8;
-    data[2] = val.z as u8;
+    val
 }
+
+const SCALE_OUT_8: f32 = 255.0;
+const SCALE_IN_8: f32 = 1.0 / SCALE_OUT_8;
 
 fn hdr_to_sdr(data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
 {
-    data.par_chunks_mut(3).for_each(|mut rgb: &mut [u8]| hdr_to_sdr_pixel(&mut rgb, sdr_white, hdr_max, gamma));
+    let scale_in = Vec3::splat(SCALE_IN_8);
+    let scale_out = Vec3::splat(SCALE_OUT_8);
+    data.par_chunks_mut(3).for_each(|rgb| {
+        let rgb_bt2100 = Vec3::new(rgb[0] as f32, rgb[1] as f32, rgb[2] as f32) * scale_in;
+        let rgb_srgb = hdr_to_sdr_pixel(rgb_bt2100, sdr_white, hdr_max, gamma);
+        let rgb_8 = rgb_srgb * scale_out;
+        rgb[0] = rgb_8.x as u8;
+        rgb[1] = rgb_8.y as u8;
+        rgb[2] = rgb_8.z as u8;
+    });
 }
 
 fn write_png(filename: &str,
