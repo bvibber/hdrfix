@@ -10,6 +10,7 @@ use glam::f32::{Mat3, Vec3};
 
 // CLI bits
 use clap::{Arg, App, ArgMatches};
+use time::OffsetDateTime;
 
 // Error bits
 use thiserror::Error;
@@ -28,6 +29,15 @@ enum LocalError {
     PNGFormatError()
 }
 
+fn time_func<F, G>(msg: &str, func: F) -> Result<G>
+    where F: FnOnce() -> Result<G>
+{
+    let start = OffsetDateTime::now_utc();
+    let result = func()?;
+    let delta = OffsetDateTime::now_utc() - start;
+    println!("{} in {} ms", msg, delta.as_seconds_f64() * 1000.0);
+    Ok(result)
+}
 
 // Read an input PNG and return its size and contents
 // It must be a certain format (8bpp true color no alpha)
@@ -209,15 +219,21 @@ fn write_png(filename: &str,
 
 fn hdrfix(args: ArgMatches) -> Result<String> {
     let input_filename = args.value_of("input").unwrap();
-    let (width, height, mut data) = read_png(input_filename)?;
+    let (width, height, mut data) = time_func("read_png", || {
+        read_png(input_filename)
+    })?;
 
     let sdr_white = args.value_of("sdr-white").unwrap().parse::<f32>()?;
     let hdr_max = args.value_of("hdr-max").unwrap().parse::<f32>()?;
     let gamma = args.value_of("gamma").unwrap().parse::<f32>()?;
-    hdr_to_sdr(width, height, &mut data, sdr_white, hdr_max, gamma);
+    time_func("hdr_to_sdr", || {
+        Ok(hdr_to_sdr(width, height, &mut data, sdr_white, hdr_max, gamma))
+    })?;
 
     let output_filename = args.value_of("output").unwrap();
-    write_png(output_filename, width, height, &data)?;
+    time_func("write_png", || {
+        write_png(output_filename, width, height, &data)
+    })?;
 
     return Ok(output_filename.to_string());
 }
