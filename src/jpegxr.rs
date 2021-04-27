@@ -216,65 +216,133 @@ struct IID {
     raw: PKIID
 }
 
+pub enum PhotometricInterpretation {
+    WhiteIsZero,
+    BlackIsZero,
+    RGB,
+    RGBPalette,
+    TransparencyMask,
+    CMYK,
+    YCbCr,
+    CIELab,
+    NCH,
+    RGBE,
+}
+
+impl PhotometricInterpretation {
+    pub fn from_raw(raw: u32) -> Result<PhotometricInterpretation> {
+        use PhotometricInterpretation::*;
+        match raw {
+            PK_PI_W0 => Ok(WhiteIsZero),
+            PK_PI_B0 => Ok(BlackIsZero),
+            PK_PI_RGB => Ok(RGB),
+            PK_PI_RGBPalette => Ok(RGBPalette),
+            PK_PI_TransparencyMask => Ok(TransparencyMask),
+            PK_PI_CMYK => Ok(CMYK),
+            PK_PI_YCbCr => Ok(YCbCr),
+            PK_PI_CIELab => Ok(CIELab),
+            PK_PI_NCH => Ok(NCH),
+            PK_PI_RGBE => Ok(RGBE),
+            _ => Err(InvalidData)
+        }
+    }
+}
+
+pub enum BitDepthBits {
+    // regular ones
+    One, //White is foreground
+    Eight,
+    Sixteen,
+    SixteenS,
+    SixteenF,
+    ThirtyTwo,
+    ThirtyTwoS,
+    ThirtyTwoF,
+
+    // irregular ones
+    Five,
+    Ten,
+    FiveSixFive,
+
+    OneAlt, //Black is foreground
+}
+
+impl BitDepthBits {
+    pub fn from_raw(raw: i32) -> Result<BitDepthBits> {
+        use BitDepthBits::*;
+        match raw {
+            BITDEPTH_BITS_BD_1 => Ok(One),
+            BITDEPTH_BITS_BD_8 => Ok(Eight),
+            BITDEPTH_BITS_BD_16 => Ok(Sixteen),
+            BITDEPTH_BITS_BD_16S => Ok(SixteenS),
+            BITDEPTH_BITS_BD_16F => Ok(SixteenF),
+            BITDEPTH_BITS_BD_32 => Ok(ThirtyTwo),
+            BITDEPTH_BITS_BD_32S => Ok(ThirtyTwoS),
+            BITDEPTH_BITS_BD_32F => Ok(ThirtyTwoF),
+            BITDEPTH_BITS_BD_5 => Ok(Five),
+            BITDEPTH_BITS_BD_10 => Ok(Ten),
+            BITDEPTH_BITS_BD_565 => Ok(FiveSixFive),
+            BITDEPTH_BITS_BD_1alt => Ok(OneAlt),
+            _ => Err(InvalidData)
+        }
+    }
+}
 pub struct PixelInfo {
     raw: PKPixelInfo
 }
 
-/*
 impl PixelInfo {
 
     pub fn format_lookup(lookup_type: PixelFormatHash) -> Result<PixelInfo> {
-        let mut info = PixelInfo {
-            raw: mem::zeroed()
-        };
-        call(PixelFormatLookup(&mut info.raw, lookup_type.raw))?;
-        Ok(info)
+        unsafe {
+            let mut info = PixelInfo {
+                raw: std::mem::zeroed()
+            };
+            call(PixelFormatLookup(&mut info.raw, lookup_type.raw))?;
+            Ok(info)
+        }
     }
 
     pub fn format(&self) -> PixelFormat {
-        PixelFormat::from_guid(self.raw.guid).unwrap()
+        unsafe {
+            PixelFormat::from_guid(&*self.raw.pGUIDPixFmt).unwrap()
+        }
     }
 
     pub fn count_channel(&self) -> usize {
         self.raw.cChannel
     }
 
-    pub fn color_format(&self) -> Option<ColorFormat> {
+    pub fn color_format(&self) -> ColorFormat {
         ColorFormat::from_raw(self.raw.cfColorFormat).unwrap()
     }
     
     pub fn bit_depth(&self) -> BitDepthBits {
-        BitDepthBits::from_raw(self.raw.bdBitDepth)
+        BitDepthBits::from_raw(self.raw.bdBitDepth).unwrap()
     }
 
     pub fn bit_unit(&self) -> u32 {
-        self.raw.cbitUnit;
+        // what does this do?
+        self.raw.cbitUnit
     }
 
     pub fn gr_bit(&self) -> u32 {
         // implemented as LONG for some reason
+        // what is it?
         self.raw.grBit as u32
     }
 
     // todo add the tiff properties
 }
-*/
 
 
 struct InputStream<R: Read + Seek> {
     raw: WMPStream,
-    reader: R,
-    length: u64
+    reader: R
 }
 
 impl<R> InputStream<R> where R: Read + Seek {
-    fn create(mut reader: R) -> Result<*mut Self> {
-        // Get length so we can calculate EOS. Assumes static files.
-        let start = reader.stream_position()?;
-        reader.seek(SeekFrom::End(0))?;
-        let length = reader.stream_position()?;
-        reader.seek(SeekFrom::Start(start))?;
-
+    fn create(reader: R) -> Result<*mut Self> {
         unsafe {
             let state = Box::into_raw(Box::new(Self {
                 raw: WMPStream {
@@ -283,14 +351,13 @@ impl<R> InputStream<R> where R: Read + Seek {
                     },
                     fMem: 0,
                     Close: Some(Self::input_stream_close),
-                    EOS: Some(Self::input_stream_eos),
+                    EOS: None, // Not used in library code base!
                     Read: Some(Self::input_stream_read),
                     Write: Some(Self::input_stream_write),
                     SetPos: Some(Self::input_stream_set_pos),
-                    GetPos: Some(Self::input_stream_get_pos),
+                    GetPos: Some(Self::input_stream_get_pos)
                 },
-                reader: reader,
-                length: length
+                reader: reader
             }));
             (*state).raw.state.pvObj = std::mem::transmute(state);
             Ok(state)
@@ -307,14 +374,6 @@ impl<R> InputStream<R> where R: Read + Seek {
         drop(boxed);
         *me = std::ptr::null_mut();
         WMP_errSuccess as ERR
-    }
-
-    unsafe extern "C" fn input_stream_eos(me: *mut WMPStream) -> i32 {
-        let state = Self::get_state(me);
-        match (*state).reader.stream_position() {
-            Ok(pos) => (pos == (*state).length) as i32,
-            Err(_) => true as i32
-        }
     }
 
     unsafe extern "C" fn input_stream_read(me: *mut WMPStream, dest: *mut c_void, cb: usize) -> ERR {
@@ -356,43 +415,6 @@ impl<R> InputStream<R> where R: Read + Seek {
     }
 }
 
-
-struct CodecFactory {
-    raw: *mut PKCodecFactory
-}
-
-impl CodecFactory {
-    fn create() -> Result<Self> {
-        unsafe {
-            let mut ptr = std::ptr::null_mut();
-            call(PKCreateCodecFactory(&mut ptr, WMP_SDK_VERSION))?;
-            Ok(Self {
-                raw: ptr
-            })
-        }
-    }
-
-    fn create_decoder<R: Read + Seek>(&self, reader: R) -> Result<ImageDecode<R>> {
-        unsafe {
-            let stream = InputStream::create(reader)?;
-            let mut codec: *mut PKImageDecode = std::ptr::null_mut();
-            call((*self.raw).CreateCodec.unwrap()(&IID_PKImageWmpDecode, std::mem::transmute(&mut codec)))?;
-    
-            call((*codec).Initialize.unwrap()(codec, &mut (*stream).raw))?;
-            Err(NotYetImplemented)
-        }
-    }
-}
-
-impl Drop for CodecFactory {
-    fn drop(&mut self) {
-        unsafe {
-            (*self.raw).Release.unwrap()(&mut self.raw);
-        }
-    }
-}
-
-
 pub struct Rect {
     raw: PKRect
 }
@@ -428,10 +450,29 @@ impl Rect {
 
 pub struct ImageDecode<R: Read + Seek> {
     raw: *mut PKImageDecode,
+    // The stream ends up owned by the PKImageDecode
+    // We keep this reference here because we need the type
+    // but don't actually need it maybe
     stream: *mut InputStream<R>,
 }
 
 impl<R> ImageDecode<R> where R: Read + Seek {
+
+    // This will consume the reader, and free it when done.
+    fn create(reader: R) -> Result<Self> {
+        unsafe {
+            let stream = InputStream::create(reader)?;
+            let mut codec: *mut PKImageDecode = std::ptr::null_mut();
+            call(PKImageDecode_Create_WMP(std::mem::transmute(&mut codec)))?;
+    
+            call((*codec).Initialize.unwrap()(codec, &mut (*stream).raw))?;
+            Ok(Self {
+                raw: codec,
+                stream: stream
+            })
+        }
+    }
+
     pub fn get_pixel_format(&mut self) -> Result<PixelFormat> {
         unsafe {
             let mut guid: GUID = std::mem::zeroed();

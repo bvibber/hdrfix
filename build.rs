@@ -47,7 +47,7 @@ fn main() {
         .header("jxrlib/jxrgluelib/JXRGlue.h")
         .allowlist_function("^(WMP|PK|PixelFormatLookup|GetPixelFormatFromHash|GetImageEncodeIID|GetImageDecodeIID|FreeDescMetadata).*")
         .allowlist_var("^(WMP|PK|LOOKUP|GUID_PK|IID).*")
-        .allowlist_type("^(WMP|PK|ERR|BITDEPTH|BITDEPTH_BITS,COLORFORMAT).*")
+        .allowlist_type("^(WMP|PK|ERR|BITDEPTH|BD_|BITDEPTH_BITS|COLORFORMAT).*")
         .clang_args(&[
             "-Ijxrlib/jxrgluelib",
             "-Ijxrlib/common/include",
