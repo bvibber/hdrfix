@@ -159,33 +159,40 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
     Vec3::select(val.cmple(min), linear, gamma)
 }
 
-fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
+fn hdr_to_sdr_line(width: u32, data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
 {
     let scale_8bpp = 255.0;
     let bt2100_max = 10000.0; // the 1.0 value for BT.2100 linear
     let scrgb_max = bt2100_max / sdr_white;
     let luminance_max = hdr_max / sdr_white;
-    // todo: paralellize these loops
+    for x in 0..width {
+        // Read the original pixel value
+        let index = (x * 3) as usize;
+        let r1 = data[index] as f32;
+        let g1 = data[index + 1] as f32;
+        let b1 = data[index + 2] as f32;
+        let mut val = Vec3::new(r1, g1, b1) / scale_8bpp;
+        val = pq_to_linear(val);
+        val = val * scrgb_max;
+        val = bt2020_to_srgb(val);
+        val = reinhold_tonemap(val, luminance_max);
+        val = apply_gamma(val, gamma);
+        val = clamp_colors(val);
+        val = linear_to_srgb(val);
+        val = val * scale_8bpp;
+        data[index] = val.x as u8;
+        data[index + 1] = val.y as u8;
+        data[index + 2] = val.z as u8;
+    }
+}
+
+fn hdr_to_sdr(width: u32, height: u32, data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
+{
+    let stride = (width * 3) as usize;
     for y in 0..height {
-        for x in 0..width {
-            // Read the original pixel value
-            let index = ((x + y * width) * 3) as usize;
-            let r1 = data[index] as f32;
-            let g1 = data[index + 1] as f32;
-            let b1 = data[index + 2] as f32;
-            let mut val = Vec3::new(r1, g1, b1) / scale_8bpp;
-            val = pq_to_linear(val);
-            val = val * scrgb_max;
-            val = bt2020_to_srgb(val);
-            val = reinhold_tonemap(val, luminance_max);
-            val = apply_gamma(val, gamma);
-            val = clamp_colors(val);
-            val = linear_to_srgb(val);
-            val = val * scale_8bpp;
-            data[index] = val.x as u8;
-            data[index + 1] = val.y as u8;
-            data[index + 2] = val.z as u8;
-        }
+        let start = y as usize * stride;
+        let end = start + stride;
+        hdr_to_sdr_line(width, &mut data[start..end], sdr_white, hdr_max, gamma);
     }
 }
 
