@@ -90,7 +90,8 @@ struct Options {
     sdr_white: f32,
     hdr_max: f32,
     gamma: f32,
-    color_fix: fn(Vec3) -> Vec3
+    color_map: fn(Vec3, f32, &Options) -> Vec3,
+    mantiuk_s: f32,
 }
 
 fn pq_to_linear(val: Vec3) -> Vec3 {
@@ -123,41 +124,45 @@ fn luma_srgb(val: Vec3) -> f32 {
     val.x * KR + val.y * KG + val.z * KB
 }
 
-fn apply_gamma(val: Vec3, gamma: f32) -> Vec3 {
-    let luma_in = luma_srgb(val);
-    let luma_out = luma_in.powf(gamma);
-    val * luma_out / luma_in
+fn apply_gamma(luma_in: f32, gamma: f32) -> f32 {
+    luma_in.powf(gamma)
 }
 
-fn reinhold_tonemap(val: Vec3, white: f32) -> Vec3 {
+fn reinhold_tonemap(val: Vec3, white: f32) -> f32 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
-    // Do the Reinhold tone mapping on luminance, then scale the RGB
-    // values according to it. Note we may end up out of gamut.
+    // Do the Reinhold tone mapping on luminance.
     let luma = luma_srgb(val);
     let white2 = white * white;
-    let scale = (1.0 + luma / white2) / (1.0 + luma);
-    let scaled_rgb = val * Vec3::splat(scale);
-    scaled_rgb
+    luma * (1.0 + luma / white2) / (1.0 + luma)
 }
 
-fn color_fix_clip(val: Vec3) -> Vec3
+fn color_scale(input: Vec3, luma_out: f32) -> Vec3
 {
-    val.max(Vec3::ZERO).min(Vec3::ONE)
+    let luma_in = luma_srgb(input);
+    input * (luma_out / luma_in)
 }
 
-fn color_fix_darken(val: Vec3) -> Vec3
+fn color_clip(input: Vec3, luma_out: f32, _options: &Options) -> Vec3
 {
-    let max = val.max_element();
+    color_scale(input, luma_out).max(Vec3::ZERO).min(Vec3::ONE)
+}
+
+fn color_darken(input: Vec3, luma_out: f32, _options: &Options) -> Vec3
+{
+    let scaled = color_scale(input, luma_out);
+    let max = scaled.max_element();
     if max > 1.0 {
-        val / Vec3::splat(max)
+        scaled / Vec3::splat(max)
     } else {
-        val
+        scaled
     }
 }
 
-fn color_fix_desaturate(val: Vec3) -> Vec3
+fn color_mantiuk(val: Vec3, luma_out: f32, options: &Options) -> Vec3
 {
+    /*
+    // Desaturate high-end colors to keep them more in range
     // If any color elements went outside the color gamut, desaturate them.
     // This will preserve contrast at the cost of color
     let max = val.max_element();
@@ -166,15 +171,23 @@ fn color_fix_desaturate(val: Vec3) -> Vec3
         //
         // "Equation 3" from:
         // Color Correction for Tone Mapping
-        // R. Mantiuk1,3, R. Mantiuk2, A. Tomaszewska1and W. Heidrich
+        // R. Mantiuk, A. Tomaszewska, and W. Heidrich
         // EUROGRAPHICS 2009
         // https://www.cl.cam.ac.uk/~rkm38/pdfs/mantiuk09cctm.pdf
         let luma = Vec3::splat(luma_srgb(val));
-        let desaturation = Vec3::splat(1.0 - (max - 1.0) / max);
-        ((val / luma - Vec3::ONE) * desaturation + Vec3::ONE) * luma
+        // I think I made this up? no idea wtf
+        //let desaturation = Vec3::splat(1.0 - (max - 1.0) / max);
+        let s = options.mantiuk_s;
+        ((val / luma - Vec3::ONE) * s + Vec3::ONE) * luma
     } else {
         val
     }
+    */
+    let c_in = val;
+    let l_in = luma_srgb(c_in);
+    let l_out = luma_out;
+    let s = options.mantiuk_s;
+    (((c_in / l_in) - Vec3::ONE) * s + Vec3::ONE) * l_out
 }
 
 fn linear_to_srgb(val: Vec3) -> Vec3 {
@@ -196,9 +209,9 @@ fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, options: &Options) -> Vec3
     val = pq_to_linear(val);
     val = val * scrgb_max;
     val = bt2020_to_srgb(val);
-    val = reinhold_tonemap(val, luminance_max);
-    val = apply_gamma(val, options.gamma);
-    val = (options.color_fix)(val);
+    let mut luma_out = reinhold_tonemap(val, luminance_max);
+    luma_out = apply_gamma(luma_out, options.gamma);
+    val = (options.color_map)(val, luma_out, options);
     val = linear_to_srgb(val);
     val
 }
@@ -258,12 +271,13 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         sdr_white: args.value_of("sdr-white").unwrap().parse::<f32>()?,
         hdr_max: args.value_of("hdr-max").unwrap().parse::<f32>()?,
         gamma: args.value_of("gamma").unwrap().parse::<f32>()?,
-        color_fix: match args.value_of("color-fix").unwrap() {
-            "clip" => color_fix_clip,
-            "darken" => color_fix_darken,
-            "desaturate" => color_fix_desaturate,
+        color_map: match args.value_of("color-fix").unwrap() {
+            "clip" => color_clip,
+            "darken" => color_darken,
+            "mantiuk" => color_mantiuk,
             _ => unreachable!("oops")
-        }
+        },
+        mantiuk_s: args.value_of("mantiuk").unwrap().parse::<f32>()?,
     };
     time_func("hdr_to_sdr", || {
         Ok(hdr_to_sdr(&mut data, &options))
@@ -282,7 +296,7 @@ fn main() {
         .version("0.1.0")
         .author("Brion Vibber <brion@pobox.com>")
         .arg(Arg::with_name("input")
-            .help("Input filename, must be .png as saved by Nvidia capture overlay")
+            .help("Input filename, must be .png as saved by Nvidia capture overlay.")
             .required(true)
             .index(1))
         .arg(Arg::with_name("output")
@@ -290,24 +304,28 @@ fn main() {
             .required(true)
             .index(2))
         .arg(Arg::with_name("sdr-white")
-            .help("SDR white point, in nits")
+            .help("SDR white point, in nits.")
             .long("sdr-white")
             // 80 nits is the nominal SDR white point in a dark room.
             // Bright rooms often set SDR balance point brighter!
             .default_value("80"))
         .arg(Arg::with_name("hdr-max")
-            .help("Max HDR luminance level to preserve, in nits")
+            .help("Max HDR luminance level to preserve, in nits.")
             .long("hdr-max")
             .default_value("10000"))
         .arg(Arg::with_name("gamma")
-            .help("Gamma curve to apply on tone-mapped luminance values")
+            .help("Gamma curve to apply on tone-mapped luminance values.")
             .long("gamma")
             .default_value("1.0"))
         .arg(Arg::with_name("color-fix")
-            .help("Method for fixing out of gamut colors")
-            .long("color-fix")
-            .possible_values(&["clip", "darken", "desaturate"])
-            .default_value("desaturate"))
+            .help("Method for mapping colors and fixing out of gamut.")
+            .long("color")
+            .possible_values(&["clip", "darken", "mantiuk"])
+            .default_value("mantiuk"))
+        .arg(Arg::with_name("mantiuk")
+            .help("The 's' parameter for the mantiuk color-fix method.")
+            .long("mantiuk")
+            .default_value("1.0"))
         .get_matches();
 
     match hdrfix(args) {
