@@ -127,10 +127,12 @@ fn apply_gamma(input: Vec3, gamma: f32) -> Vec3 {
     input.powf(gamma)
 }
 
-fn reinhold_tonemap(val: Vec3, white: f32) -> f32 {
+fn reinhard_tonemap(val: Vec3, white: f32) -> f32 {
+    // http://www.cmap.polytechnique.fr/%7Epeyre/cours/x2005signal/hdr_photographic.pdf
+    //
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
-    // Do the Reinhold tone mapping on luminance.
+    // Do the Reinhard tone mapping on luminance.
     let luma = luma_srgb(val);
     let white2 = white * white;
     luma * (1.0 + luma / white2) / (1.0 + luma)
@@ -199,7 +201,7 @@ fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, options: &Options) -> Vec3
     val = pq_to_linear(val);
     val = val * scrgb_max;
     val = bt2020_to_srgb(val);
-    let luma_out = reinhold_tonemap(val, luminance_max);
+    let luma_out = reinhard_tonemap(val, luminance_max);
     val = (options.color_map)(val, luma_out);
     val = apply_gamma(val, options.gamma);
     val = linear_to_srgb(val);
