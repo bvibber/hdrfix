@@ -86,6 +86,13 @@ fn read_jxr(filename: &str)
 }
 */
 
+struct Options {
+    sdr_white: f32,
+    hdr_max: f32,
+    gamma: f32,
+    color_fix: fn(Vec3) -> Vec3
+}
+
 fn pq_to_linear(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
     let inv_m1: f32 = 1.0 / 0.1593017578125;
@@ -134,7 +141,23 @@ fn reinhold_tonemap(val: Vec3, white: f32) -> Vec3 {
     scaled_rgb
 }
 
-fn clamp_colors(val: Vec3) -> Vec3 {
+fn color_fix_clip(val: Vec3) -> Vec3
+{
+    val.max(Vec3::ZERO).min(Vec3::ONE)
+}
+
+fn color_fix_darken(val: Vec3) -> Vec3
+{
+    let max = val.max_element();
+    if max > 1.0 {
+        val / Vec3::splat(max)
+    } else {
+        val
+    }
+}
+
+fn color_fix_desaturate(val: Vec3) -> Vec3
+{
     // If any color elements went outside the color gamut, desaturate them.
     // This will preserve contrast at the cost of color
     let max = val.max_element();
@@ -164,18 +187,18 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 
 const BT2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 
-fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, sdr_white: f32, hdr_max: f32, gamma: f32) -> Vec3
+fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, options: &Options) -> Vec3
 {
-    let scrgb_max = BT2100_MAX / sdr_white;
-    let luminance_max = hdr_max / sdr_white;
+    let scrgb_max = BT2100_MAX / options.sdr_white;
+    let luminance_max = options.hdr_max / options.sdr_white;
 
     let mut val = rgb_bt2100;
     val = pq_to_linear(val);
     val = val * scrgb_max;
     val = bt2020_to_srgb(val);
     val = reinhold_tonemap(val, luminance_max);
-    val = apply_gamma(val, gamma);
-    val = clamp_colors(val);
+    val = apply_gamma(val, options.gamma);
+    val = (options.color_fix)(val);
     val = linear_to_srgb(val);
     val
 }
@@ -183,13 +206,13 @@ fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, sdr_white: f32, hdr_max: f32, gamma: f32) 
 const SCALE_OUT_8: f32 = 255.0;
 const SCALE_IN_8: f32 = 1.0 / SCALE_OUT_8;
 
-fn hdr_to_sdr(data: &mut [u8], sdr_white: f32, hdr_max: f32, gamma: f32)
+fn hdr_to_sdr(data: &mut [u8], options: &Options)
 {
     let scale_in = Vec3::splat(SCALE_IN_8);
     let scale_out = Vec3::splat(SCALE_OUT_8);
     data.par_chunks_mut(3).for_each(|rgb| {
         let rgb_bt2100 = Vec3::new(rgb[0] as f32, rgb[1] as f32, rgb[2] as f32) * scale_in;
-        let rgb_srgb = hdr_to_sdr_pixel(rgb_bt2100, sdr_white, hdr_max, gamma);
+        let rgb_srgb = hdr_to_sdr_pixel(rgb_bt2100, options);
         let rgb_8 = rgb_srgb * scale_out;
         rgb[0] = rgb_8.x as u8;
         rgb[1] = rgb_8.y as u8;
@@ -231,11 +254,19 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         read_png(input_filename)
     })?;
 
-    let sdr_white = args.value_of("sdr-white").unwrap().parse::<f32>()?;
-    let hdr_max = args.value_of("hdr-max").unwrap().parse::<f32>()?;
-    let gamma = args.value_of("gamma").unwrap().parse::<f32>()?;
+    let options = Options {
+        sdr_white: args.value_of("sdr-white").unwrap().parse::<f32>()?,
+        hdr_max: args.value_of("hdr-max").unwrap().parse::<f32>()?,
+        gamma: args.value_of("gamma").unwrap().parse::<f32>()?,
+        color_fix: match args.value_of("color-fix").unwrap() {
+            "clip" => color_fix_clip,
+            "darken" => color_fix_darken,
+            "desaturate" => color_fix_desaturate,
+            _ => unreachable!("oops")
+        }
+    };
     time_func("hdr_to_sdr", || {
-        Ok(hdr_to_sdr(&mut data, sdr_white, hdr_max, gamma))
+        Ok(hdr_to_sdr(&mut data, &options))
     })?;
 
     let output_filename = args.value_of("output").unwrap();
@@ -272,6 +303,11 @@ fn main() {
             .help("Gamma curve to apply on tone-mapped luminance values")
             .long("gamma")
             .default_value("1.0"))
+        .arg(Arg::with_name("color-fix")
+            .help("Method for fixing out of gamut colors")
+            .long("color-fix")
+            .possible_values(&["clip", "darken", "desaturate"])
+            .default_value("desaturate"))
         .get_matches();
 
     match hdrfix(args) {

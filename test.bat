@@ -1,3 +1,5 @@
+@echo off
+
 call :convert burbank
 call :convert closeup
 call :convert cloud
