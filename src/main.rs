@@ -20,6 +20,15 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, LocalError>;
 
+
+struct Options {
+    sdr_white: f32,
+    hdr_max: f32,
+    gamma: f32,
+    tone_map: fn(Vec3, &Options) -> Vec3,
+    color_map: fn(Vec3) -> Vec3,
+}
+
 #[derive(Error, Debug)]
 enum LocalError {
     #[error("I/O error")]
@@ -86,13 +95,6 @@ fn read_jxr(filename: &str)
 }
 */
 
-struct Options {
-    sdr_white: f32,
-    hdr_max: f32,
-    gamma: f32,
-    color_map: fn(Vec3, f32) -> Vec3,
-}
-
 fn pq_to_linear(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
     let inv_m1: f32 = 1.0 / 0.1593017578125;
@@ -127,49 +129,65 @@ fn apply_gamma(input: Vec3, gamma: f32) -> Vec3 {
     input.powf(gamma)
 }
 
-fn reinhard_tonemap(val: Vec3, white: f32) -> f32 {
-    // http://www.cmap.polytechnique.fr/%7Epeyre/cours/x2005signal/hdr_photographic.pdf
-    //
-    // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
-    //
-    // Do the Reinhard tone mapping on luminance.
-    let luma = luma_srgb(val);
-    let white2 = white * white;
-    luma * (1.0 + luma / white2) / (1.0 + luma)
+fn tonemap_linear(c_in: Vec3, _options: &Options) -> Vec3 {
+    c_in
 }
 
-fn color_scale(input: Vec3, luma_out: f32) -> Vec3
-{
-    let luma_in = luma_srgb(input);
-    input * (luma_out / luma_in)
+fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
+    // Map luminance from HDR to SDR domain, and scale the input color.
+    //
+    // Original:
+    // http://www.cmap.polytechnique.fr/%7Epeyre/cours/x2005signal/hdr_photographic.pdf
+    //
+    // Extended:
+    // https://64.github.io/tonemapping/#reinhard
+    // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
+    //
+    let luma_in = luma_srgb(c_in);
+    let white = options.hdr_max / options.sdr_white;
+    let white2 = white * white;
+    let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
+    let c_out = c_in * (luma_out / luma_in);
+    c_out
+}
+
+fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
+    // Variant that maps R, G, and B channels separately.
+    // This should desaturate very bright colors gradually, but will
+    // possible cause some color shift.
+    let white = options.hdr_max / options.sdr_white;
+    let white2 = white * white;
+    let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
+    c_out
 }
 
 fn clip(input: Vec3) -> Vec3 {
     input.max(Vec3::ZERO).min(Vec3::ONE)
 }
 
-fn color_clip(input: Vec3, luma_out: f32) -> Vec3
+fn color_clip(input: Vec3) -> Vec3
 {
-    clip(color_scale(input, luma_out))
+    clip(input)
 }
 
-fn color_darken(input: Vec3, luma_out: f32) -> Vec3
+fn color_darken(input: Vec3) -> Vec3
 {
-    let scaled = color_scale(input, luma_out);
-    let max = scaled.max_element();
+    let max = input.max_element();
     if max > 1.0 {
-        scaled / Vec3::splat(max)
+        input / Vec3::splat(max)
     } else {
-        scaled
+        input
     }
 }
 
-fn color_desaturate(c_in: Vec3, luma_out: f32) -> Vec3
+fn color_desaturate(c_in: Vec3) -> Vec3
 {
     // algorithm of my own devise
     // only for colors out of gamut, desaturate until it matches luminance,
     // then clip anything that ends up out of bounds still (shouldn't happen)
-    let scaled = color_scale(c_in, luma_out);
+    let luma_out = luma_srgb(c_in);
+    let luma_in = luma_srgb(c_in);
+    let scaled = c_in * (luma_out / luma_in);
     let max = scaled.max_element();
     if max > 1.0 {
         let white = Vec3::splat(luma_out);
@@ -195,15 +213,15 @@ const BT2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, options: &Options) -> Vec3
 {
     let scrgb_max = BT2100_MAX / options.sdr_white;
-    let luminance_max = options.hdr_max / options.sdr_white;
 
     let mut val = rgb_bt2100;
     val = pq_to_linear(val);
     val = val * scrgb_max;
     val = bt2020_to_srgb(val);
-    let luma_out = reinhard_tonemap(val, luminance_max);
-    val = (options.color_map)(val, luma_out);
+    val = (options.tone_map)(val, &options);
+    val = (options.color_map)(val);
     val = apply_gamma(val, options.gamma);
+    val = clip(val);
     val = linear_to_srgb(val);
     val
 }
@@ -263,11 +281,17 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         sdr_white: args.value_of("sdr-white").unwrap().parse::<f32>()?,
         hdr_max: args.value_of("hdr-max").unwrap().parse::<f32>()?,
         gamma: args.value_of("gamma").unwrap().parse::<f32>()?,
+        tone_map: match args.value_of("tone-map").unwrap() {
+            "linear" => tonemap_linear,
+            "reinhard-luma" => tonemap_reinhard_luma,
+            "reinhard-rgb" => tonemap_reinhard_rgb,
+            _ => unreachable!("bad tone-map option")
+        },
         color_map: match args.value_of("color-map").unwrap() {
             "clip" => color_clip,
             "darken" => color_darken,
             "desaturate" => color_desaturate,
-            _ => unreachable!("bad color option")
+            _ => unreachable!("bad color-map option")
         },
     };
     time_func("hdr_to_sdr", || {
@@ -308,6 +332,11 @@ fn main() {
             .help("Gamma curve to apply on tone-mapped luminance values.")
             .long("gamma")
             .default_value("1.0"))
+        .arg(Arg::with_name("tone-map")
+            .help("Method for mapping HDR into SDR domain.")
+            .long("tone-map")
+            .possible_values(&["linear", "reinhard-luma", "reinhard-rgb"])
+            .default_value("reinhard-luma"))
         .arg(Arg::with_name("color-map")
             .help("Method for mapping colors and fixing out of gamut.")
             .long("color-map")
