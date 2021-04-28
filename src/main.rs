@@ -108,7 +108,7 @@ fn pq_to_linear(val: Vec3) -> Vec3 {
     ).powf(inv_m1)
 }
 
-fn bt2020_to_srgb(val: Vec3) -> Vec3 {
+fn bt2100_to_scrgb(val: Vec3) -> Vec3 {
     let matrix = Mat3::from_cols_array(&[
         1.6605, -0.1246, -0.0182,
         -0.5876, 1.1329, -0.1006,
@@ -205,23 +205,23 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
     let min = Vec3::splat(0.0031308);
     let linear = val * Vec3::splat(12.92);
     let gamma = (val * Vec3::splat(1.055)).powf(1.0 / 2.4) - Vec3::splat(0.055);
-    Vec3::select(val.cmple(min), linear, gamma)
+    clip(Vec3::select(val.cmple(min), linear, gamma))
 }
 
 const BT2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 
 fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, options: &Options) -> Vec3
 {
-    let scrgb_max = BT2100_MAX / options.sdr_white;
+    // 1.0 in scRGB should == the SDR white level
+    let scale = BT2100_MAX / options.sdr_white;
 
     let mut val = rgb_bt2100;
     val = pq_to_linear(val);
-    val = val * scrgb_max;
-    val = bt2020_to_srgb(val);
+    val = val * scale;
+    val = bt2100_to_scrgb(val);
     val = (options.tone_map)(val, &options);
     val = (options.color_map)(val);
     val = apply_gamma(val, options.gamma);
-    val = clip(val);
     val = linear_to_srgb(val);
     val
 }
