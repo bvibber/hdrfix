@@ -143,9 +143,13 @@ fn color_scale(input: Vec3, luma_out: f32) -> Vec3
     input * (luma_out / luma_in)
 }
 
+fn clip(input: Vec3) -> Vec3 {
+    input.max(Vec3::ZERO).min(Vec3::ONE)
+}
+
 fn color_clip(input: Vec3, luma_out: f32, _options: &Options) -> Vec3
 {
-    color_scale(input, luma_out).max(Vec3::ZERO).min(Vec3::ONE)
+    clip(color_scale(input, luma_out))
 }
 
 fn color_darken(input: Vec3, luma_out: f32, _options: &Options) -> Vec3
@@ -159,30 +163,37 @@ fn color_darken(input: Vec3, luma_out: f32, _options: &Options) -> Vec3
     }
 }
 
+fn color_desaturate(c_in: Vec3, luma_out: f32, _options: &Options) -> Vec3
+{
+    // algorithm of my own devise
+    // only for colors out of gamut, desaturate until it matches luminance,
+    // then clip anything that ends up out of bounds still (shouldn't happen)
+    let scaled = color_scale(c_in, luma_out);
+    let max = scaled.max_element();
+    if max > 1.0 {
+        let white = Vec3::splat(luma_out);
+        let diff = scaled - white;
+        let ratio = (max - 1.0) / max;
+        let desaturated = scaled - diff * ratio;
+        clip(desaturated)
+    } else {
+        scaled
+    }
+}
+
+fn color_birukov(c_in: Vec3, luma_out: f32, options: &Options) -> Vec3
+{
+    // works best with lower hdr_max
+    // http://ceur-ws.org/Vol-2485/paper13.pdf
+    let luma_in = luma_srgb(c_in);
+    let luma_in_max = options.hdr_max;
+    let c_in_avg = Vec3::splat((c_in.x + c_in.y + c_in.z) / 3.0);
+    let c_out = (c_in - ((c_in - c_in_avg) * (luma_in / luma_in_max))) * (luma_out / luma_in);
+    clip(c_out)
+}
+
 fn color_mantiuk(val: Vec3, luma_out: f32, options: &Options) -> Vec3
 {
-    /*
-    // Desaturate high-end colors to keep them more in range
-    // If any color elements went outside the color gamut, desaturate them.
-    // This will preserve contrast at the cost of color
-    let max = val.max_element();
-    if max > 1.0 {
-        // Desaturate while attempting to maintain luminance.
-        //
-        // "Equation 3" from:
-        // Color Correction for Tone Mapping
-        // R. Mantiuk, A. Tomaszewska, and W. Heidrich
-        // EUROGRAPHICS 2009
-        // https://www.cl.cam.ac.uk/~rkm38/pdfs/mantiuk09cctm.pdf
-        let luma = Vec3::splat(luma_srgb(val));
-        // I think I made this up? no idea wtf
-        //let desaturation = Vec3::splat(1.0 - (max - 1.0) / max);
-        let s = options.mantiuk_s;
-        ((val / luma - Vec3::ONE) * s + Vec3::ONE) * luma
-    } else {
-        val
-    }
-    */
     let c_in = val;
     let l_in = luma_srgb(c_in);
     let l_out = luma_out;
@@ -275,6 +286,8 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
             "clip" => color_clip,
             "darken" => color_darken,
             "mantiuk" => color_mantiuk,
+            "birukov" => color_birukov,
+            "desaturate" => color_desaturate,
             _ => unreachable!("oops")
         },
         mantiuk_s: args.value_of("mantiuk").unwrap().parse::<f32>()?,
@@ -320,7 +333,7 @@ fn main() {
         .arg(Arg::with_name("color-fix")
             .help("Method for mapping colors and fixing out of gamut.")
             .long("color")
-            .possible_values(&["clip", "darken", "mantiuk"])
+            .possible_values(&["birukov", "clip", "darken", "desaturate", "mantiuk"])
             .default_value("mantiuk"))
         .arg(Arg::with_name("mantiuk")
             .help("The 's' parameter for the mantiuk color-fix method.")
