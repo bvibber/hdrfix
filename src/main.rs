@@ -129,8 +129,8 @@ fn reinhold_tonemap(val: Vec3, white: f32) -> Vec3 {
     // values according to it. Note we may end up out of gamut.
     let luma = luma_srgb(val);
     let white2 = white * white;
-    let scaled_luma = luma * (1.0 + luma / white2) / (1.0 + luma);
-    let scaled_rgb = val * Vec3::splat(scaled_luma / luma);
+    let scale = (1.0 + luma / white2) / (1.0 + luma);
+    let scaled_rgb = val * Vec3::splat(scale);
     scaled_rgb
 }
 
