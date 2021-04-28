@@ -3,6 +3,7 @@
 call :convert burbank
 call :convert closeup
 call :convert cloud
+call :convert ikea
 call :convert newyork
 call :convert oregon
 call :convert panel
