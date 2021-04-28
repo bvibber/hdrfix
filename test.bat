@@ -15,6 +15,5 @@ exit /b %ERRORLEVEL%
 
 
 :convert
-cargo run --release -- --sdr-white=100 --gamma=1.2 --color=clip samples\%1.png samples\%1-sdr.png
-cargo run --release -- --sdr-white=100 --gamma=1.2 --color=desaturate samples\%1.png samples\%1-sdr-desat.png
+cargo run --release -- --sdr-white=100 --gamma=1.2 samples\%1.png samples\%1-sdr.png
 exit /b 0
