@@ -129,7 +129,7 @@ pub enum PixelFormat {
     HDR96bppRGBFloat,
 
     // Whatever the hell my NVIDIA screenshots are in
-    HDRMystery,
+    HDR128bppRGBAFloat,
 }
 use PixelFormat::*;
 
@@ -158,7 +158,7 @@ static GUID_MAP: &[(&GUID, PixelFormat)] = unsafe {
         (&GUID_PKPixelFormat64bppPRGBA, HDR64bppPRGBA),
         (&GUID_PKPixelFormat96bppRGBFixedPoint, HDR96bppRGBFixedPoint),
         (&GUID_PKPixelFormat96bppRGBFloat, HDR96bppRGBFloat),
-        (&GUID_PKPixelFormatMystery, HDRMystery),
+        (&GUID_PKPixelFormat128bppRGBAFloat, HDR128bppRGBAFloat),
     ]
 };
 
@@ -439,7 +439,7 @@ pub struct ImageDecode<R: Read + Seek> {
     raw: *mut PKImageDecode,
     // The stream ends up owned by the PKImageDecode
     // We keep this reference here because we need the type
-    // but don't actually need it maybe
+    // todo: allow getting the reader back out on disposal
     stream: *mut InputStream<R>,
 }
 
@@ -451,7 +451,7 @@ impl<R> ImageDecode<R> where R: Read + Seek {
             let stream = InputStream::create(reader)?;
             let mut codec: *mut PKImageDecode = std::ptr::null_mut();
             call(PKImageDecode_Create_WMP(std::mem::transmute(&mut codec)))?;
-    
+
             call((*codec).Initialize.unwrap()(codec, &mut (*stream).raw))?;
             Ok(Self {
                 raw: codec,
@@ -497,7 +497,9 @@ impl<R> ImageDecode<R> where R: Read + Seek {
 
     pub fn copy(&mut self, rect: &Rect, dest: &mut [u8], stride: u32) -> Result<()> {
         unsafe {
+            println!("hello1");
             call((*self.raw).Copy.unwrap()(self.raw, &rect.raw, dest.as_mut_ptr(), stride))?;
+            println!("hello2");
             Ok(())
         }
     }

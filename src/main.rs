@@ -22,8 +22,17 @@ use thiserror::Error;
 type Result<T> = std::result::Result<T, LocalError>;
 
 enum Depth {
-    Eight,
-    Ten,
+    RGB24,
+    RGBA32Float,
+}
+
+impl Depth {
+    fn bytes_per_pixel(&self) -> usize {
+        match self {
+            Depth::RGB24 => 3,
+            Depth::RGBA32Float => 16,
+        }
+    }
 }
 
 struct Options {
@@ -86,7 +95,7 @@ fn read_png(filename: &str)
     let mut data = vec![0u8; info.buffer_size()];
     reader.next_frame(&mut data)?;
 
-    Ok((info.width, info.height, Depth::Eight, data))
+    Ok((info.width, info.height, Depth::RGB24, data))
 }
 
 fn read_jxr(filename: &str)
@@ -96,24 +105,28 @@ fn read_jxr(filename: &str)
     use jpegxr::PixelFormat;
     use jpegxr::Rect;
 
-    let depth = Depth::Ten;
+    let depth = Depth::RGBA32Float;
 
     let input = File::open(filename)?;
+    println!("creating");
     let mut decoder = ImageDecode::create(input)?;
+    println!("created");
 
     let format = decoder.get_pixel_format()?;
-    if format != PixelFormat::HDRMystery {
+    if format != PixelFormat::HDR128bppRGBAFloat {
         return Err(UnsupportedPixelFormat);
     }
 
     let (width, height) = decoder.get_size()?;
-    let stride = width as u32 * 4;
-    let size = stride as usize * height as usize;
+    let stride = width as usize * depth.bytes_per_pixel();
+    let size = stride * height as usize;
     let mut data = Vec::<u8>::with_capacity(size);
     data.resize(size, 0);
 
+    println!("{0} {1} {2}", width, height, stride);
+
     let rect = Rect::new(0, 0, width, height);
-    decoder.copy(&rect, &mut data, stride)?;
+    decoder.copy(&rect, &mut data, stride as u32)?;
 
     Ok((width as u32, height as u32, depth, data))
 }
