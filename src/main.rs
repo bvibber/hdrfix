@@ -2,6 +2,7 @@ mod jpegxr_sys;
 mod jpegxr;
 
 use std::fs::File;
+use std::path::Path;
 use std::io;
 use std::num;
 
@@ -20,6 +21,10 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, LocalError>;
 
+enum Depth {
+    Eight,
+    Ten,
+}
 
 struct Options {
     sdr_white: f32,
@@ -38,8 +43,15 @@ enum LocalError {
     #[error("PNG decoding error")]
     PNGDecodingError(#[from] png::DecodingError),
     #[error("PNG input must be in 8bpp true color")]
-    PNGFormatError()
+    PNGFormatError,
+    #[error("JPEG XR decoding error")]
+    JXRError(#[from] jpegxr::JXRError),
+    #[error("Invalid input file type")]
+    InvalidInputFile,
+    #[error("Unsupported pixel format")]
+    UnsupportedPixelFormat,
 }
+use LocalError::*;
 
 fn time_func<F, G>(msg: &str, func: F) -> Result<G>
     where F: FnOnce() -> Result<G>
@@ -54,10 +66,12 @@ fn time_func<F, G>(msg: &str, func: F) -> Result<G>
 // Read an input PNG and return its size and contents
 // It must be a certain format (8bpp true color no alpha)
 fn read_png(filename: &str)
-    -> Result<(u32, u32, Vec<u8>)>
+    -> Result<(u32, u32, Depth, Vec<u8>)>
 {
     use png::Decoder;
     use png::Transformations;
+
+    let depth = 8;
 
     let mut decoder = Decoder::new(File::open(filename)?);
     decoder.set_transformations(Transformations::IDENTITY);
@@ -65,35 +79,46 @@ fn read_png(filename: &str)
     let (info, mut reader) = decoder.read_info()?;
 
     if info.bit_depth != png::BitDepth::Eight {
-        return Err(LocalError::PNGFormatError());
+        return Err(PNGFormatError);
     }
     if info.color_type != png::ColorType::RGB {
-        return Err(LocalError::PNGFormatError());
+        return Err(PNGFormatError);
     }
 
     let mut data = vec![0u8; info.buffer_size()];
     reader.next_frame(&mut data)?;
 
-    Ok((info.width, info.height, data))
+    Ok((info.width, info.height, Depth::Eight, data))
 }
 
-/*
 fn read_jxr(filename: &str)
-  -> Result<(u32, u32, Vec<u16>)>
+  -> Result<(u32, u32, Depth, Vec<u8>)>
 {
-    use jpegxr::Decoder;
+    use jpegxr::ImageDecode;
     use jpegxr::PixelFormat;
+    use jpegxr::Rect;
 
-    let mut decoder = Decoder::new(File::open(filename)?);
+    let depth = Depth::Ten;
 
-    let (info, mut reader) = decoder.read_info()?;
+    let input = File::open(filename)?;
+    let mut decoder = ImageDecode::create(input)?;
 
-    let mut data = vec![0u16; info.buffer_size()];
-    reader.next_frame(&mut data)?;
+    let format = decoder.get_pixel_format()?;
+    if format != PixelFormat::HDR32bppRGB101010 {
+        return Err(UnsupportedPixelFormat);
+    }
 
-    Ok((info.width, info.height, data))
+    let (width, height) = decoder.get_size()?;
+    let stride = width as u32 * 4;
+    let size = stride as usize * height as usize;
+    let mut data = Vec::<u8>::with_capacity(size);
+    data.resize(size, 0);
+
+    let rect = Rect::new(0, 0, width, height);
+    decoder.copy(&rect, &mut data, stride)?;
+
+    Ok((width as u32, height as u32, depth, data))
 }
-*/
 
 fn pq_to_linear(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
@@ -273,8 +298,13 @@ fn write_png(filename: &str,
 
 fn hdrfix(args: ArgMatches) -> Result<String> {
     let input_filename = args.value_of("input").unwrap();
-    let (width, height, mut data) = time_func("read_png", || {
-        read_png(input_filename)
+    let (width, height, depth, mut data) = time_func("read_input", || {
+        let ext = Path::new(&input_filename).extension().unwrap().to_str().unwrap();
+        match ext {
+            "png" => read_png(input_filename),
+            "jxr" => read_jxr(input_filename),
+            _ => Err(InvalidInputFile)
+        }
     })?;
 
     let options = Options {

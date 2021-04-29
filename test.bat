@@ -16,5 +16,6 @@ exit /b %ERRORLEVEL%
 
 
 :convert
-cargo run --release -- --sdr-white=200 --hdr-max=2000 samples\%1.png samples\%1-sdr.png
+rem cargo run --release -- --sdr-white=200 --hdr-max=2000 samples\%1.png samples\%1-sdr.png
+cargo run --release -- --sdr-white=200 --hdr-max=2000 samples\%1-hdr.jxr samples\%1-sdr.png
 exit /b 0

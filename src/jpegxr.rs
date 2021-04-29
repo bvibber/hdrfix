@@ -89,20 +89,6 @@ fn call(err: ERR) -> Result<()> {
 }
 
 #[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub enum Channel {
-    Luminance,
-    Red,
-    Green,
-    Blue,
-    Alpha
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
-pub struct PixelFormatHash {
-    raw: u8
-}
-
-#[derive(Debug, Eq, PartialEq, Clone, Copy)]
 pub enum PixelFormat {
     DontCare,
 
@@ -174,13 +160,6 @@ impl PixelFormat {
             }
         }
         Err(InvalidData)
-    }
-
-    pub fn from_hash(hash: u8) -> Result<PixelFormat> {
-        unsafe {
-            let guid = GetPixelFormatFromHash(hash);
-            PixelFormat::from_guid(&*guid)
-        }
     }
 
 }
@@ -287,29 +266,31 @@ impl BitDepthBits {
         }
     }
 }
+
 pub struct PixelInfo {
     raw: PKPixelInfo
 }
 
 impl PixelInfo {
 
-    pub fn format_lookup(lookup_type: PixelFormatHash) -> Result<PixelInfo> {
+    pub fn from_guid(guid: &GUID) -> Result<PixelInfo> {
         unsafe {
             let mut info = PixelInfo {
                 raw: std::mem::zeroed()
             };
-            call(PixelFormatLookup(&mut info.raw, lookup_type.raw))?;
+            info.raw.pGUIDPixFmt = guid;
+            call(PixelFormatLookup(&mut info.raw, LOOKUP_FORWARD as u8))?;
             Ok(info)
         }
     }
 
-    pub fn format(&self) -> PixelFormat {
+    pub fn format(&self) -> &GUID {
         unsafe {
-            PixelFormat::from_guid(&*self.raw.pGUIDPixFmt).unwrap()
+            &*self.raw.pGUIDPixFmt
         }
     }
 
-    pub fn count_channel(&self) -> usize {
+    pub fn channels(&self) -> usize {
         self.raw.cChannel
     }
 
@@ -321,18 +302,8 @@ impl PixelInfo {
         BitDepthBits::from_raw(self.raw.bdBitDepth).unwrap()
     }
 
-    pub fn bit_unit(&self) -> u32 {
-        // what does this do?
-        self.raw.cbitUnit
-    }
-
-    pub fn gr_bit(&self) -> u32 {
-        // implemented as LONG for some reason
-        // what is it?
-        self.raw.grBit as u32
-    }
-
-    // todo add the tiff properties
+    // what is cbitUnit?
+    // what is grBit?
 }
 
 
@@ -459,7 +430,7 @@ pub struct ImageDecode<R: Read + Seek> {
 impl<R> ImageDecode<R> where R: Read + Seek {
 
     // This will consume the reader, and free it when done.
-    fn create(reader: R) -> Result<Self> {
+    pub fn create(reader: R) -> Result<Self> {
         unsafe {
             let stream = InputStream::create(reader)?;
             let mut codec: *mut PKImageDecode = std::ptr::null_mut();
@@ -473,7 +444,7 @@ impl<R> ImageDecode<R> where R: Read + Seek {
         }
     }
 
-    pub fn get_pixel_format(&mut self) -> Result<PixelFormat> {
+    pub fn get_pixel_format(&self) -> Result<PixelFormat> {
         unsafe {
             let mut guid: GUID = std::mem::zeroed();
             call((*self.raw).GetPixelFormat.unwrap()(self.raw, &mut guid))?;
@@ -481,7 +452,7 @@ impl<R> ImageDecode<R> where R: Read + Seek {
         }
     }
 
-    pub fn get_size(&mut self) -> Result<(i32, i32)> {
+    pub fn get_size(&self) -> Result<(i32, i32)> {
         unsafe {
             let mut width: i32 = 0;
             let mut height: i32 = 0;
@@ -490,7 +461,7 @@ impl<R> ImageDecode<R> where R: Read + Seek {
         }
     }
 
-    pub fn get_resolution(&mut self) -> Result<(f32, f32)> {
+    pub fn get_resolution(&self) -> Result<(f32, f32)> {
         unsafe {
             let mut horiz: f32 = 0.0;
             let mut vert: f32 = 0.0;
@@ -499,21 +470,7 @@ impl<R> ImageDecode<R> where R: Read + Seek {
         }
     }
 
-    pub fn get_color_context(&mut self) -> Result<(u8, u32)> {
-        // ???
-        unsafe {
-            let mut a: u8 = 0;
-            let mut b: u32 = 0;
-            call((*self.raw).GetColorContext.unwrap()(self.raw, &mut a, &mut b))?;
-            Ok((a, b))
-        }
-    }
-
-    pub fn get_descriptive_metadata(&mut self) -> Result<()> {
-        Err(NotYetImplemented)
-    }
-
-    pub fn get_raw_stream(&mut self) -> Result<&mut R> {
+    pub fn get_raw_stream(&self) -> Result<&mut R> {
         unsafe {
             let mut stream: *mut WMPStream = std::ptr::null_mut();
             call((*self.raw).GetRawStream.unwrap()(self.raw, &mut stream))?;
@@ -522,14 +479,14 @@ impl<R> ImageDecode<R> where R: Read + Seek {
         }
     }
 
-    pub fn copy(&mut self, rect: Rect, dest: &mut [u8], stride: u32) -> Result<()> {
+    pub fn copy(&mut self, rect: &Rect, dest: &mut [u8], stride: u32) -> Result<()> {
         unsafe {
             call((*self.raw).Copy.unwrap()(self.raw, &rect.raw, dest.as_mut_ptr(), stride))?;
             Ok(())
         }
     }
 
-    pub fn get_frame_count(&mut self) -> Result<u32> {
+    pub fn get_frame_count(&self) -> Result<u32> {
         unsafe {
             let mut frames: u32 = 0;
             call((*self.raw).GetFrameCount.unwrap()(self.raw, &mut frames))?;
