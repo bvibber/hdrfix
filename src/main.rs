@@ -28,7 +28,9 @@ struct PixelReader {
 
 fn read_rgb24(data: &[u8]) -> Vec3 {
     let scale = Vec3::splat(1.0 / 255.0);
-    Vec3::new(data[0] as f32, data[1] as f32, data[2] as f32) * scale
+    let rgb_bt2100 = Vec3::new(data[0] as f32, data[1] as f32, data[2] as f32) * scale;
+    let rgb_linear = pq_to_linear(rgb_bt2100);
+    bt2100_to_scrgb(rgb_linear)
 }
 
 fn read_rgb128float(data: &[u8]) -> Vec3 {
@@ -164,7 +166,8 @@ fn bt2100_to_scrgb(val: Vec3) -> Vec3 {
         -0.5876, 1.1329, -0.1006,
         -0.0728, -0.0083, 1.1187
     ]);
-    matrix.mul_vec3(val)
+    let scale = BT2100_MAX / 80.0;
+    matrix.mul_vec3(val * scale)
 }
 
 const KR: f32 = 0.2126;
@@ -260,15 +263,13 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 
 const BT2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 
-fn hdr_to_sdr_pixel(rgb_bt2100: Vec3, options: &Options) -> Vec3
+fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
     // 1.0 in scRGB should == the SDR white level
-    let scale = BT2100_MAX / options.sdr_white;
+    let scale = 80.0 / options.sdr_white;
 
-    let mut val = rgb_bt2100;
-    val = pq_to_linear(val);
+    let mut val = rgb_scrgb;
     val = val * scale;
-    val = bt2100_to_scrgb(val);
     val = (options.tone_map)(val, &options);
     val = (options.color_map)(val);
     val = apply_gamma(val, options.gamma);
