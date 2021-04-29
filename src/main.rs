@@ -36,15 +36,15 @@ struct Options {
 
 #[derive(Error, Debug)]
 enum LocalError {
-    #[error("I/O error")]
+    #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
-    #[error("numeric format error")]
+    #[error("numeric format error: {0}")]
     ParseFloatError(#[from] num::ParseFloatError),
-    #[error("PNG decoding error")]
+    #[error("PNG decoding error: {0}")]
     PNGDecodingError(#[from] png::DecodingError),
     #[error("PNG input must be in 8bpp true color")]
     PNGFormatError,
-    #[error("JPEG XR decoding error")]
+    #[error("JPEG XR decoding error: {0}")]
     JXRError(#[from] jpegxr::JXRError),
     #[error("Invalid input file type")]
     InvalidInputFile,
@@ -70,8 +70,6 @@ fn read_png(filename: &str)
 {
     use png::Decoder;
     use png::Transformations;
-
-    let depth = 8;
 
     let mut decoder = Decoder::new(File::open(filename)?);
     decoder.set_transformations(Transformations::IDENTITY);
@@ -104,7 +102,7 @@ fn read_jxr(filename: &str)
     let mut decoder = ImageDecode::create(input)?;
 
     let format = decoder.get_pixel_format()?;
-    if format != PixelFormat::HDR32bppRGB101010 {
+    if format != PixelFormat::HDRMystery {
         return Err(UnsupportedPixelFormat);
     }
 

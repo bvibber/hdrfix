@@ -15,12 +15,20 @@ pub type Result<T> = std::result::Result<T, JXRError>;
 #[derive(Error, Debug)]
 pub enum JXRError {
     // Rust-side errors
-    #[error("I/O error")]
+    #[error("I/O error: {0}")]
     IoError(#[from] io::Error),
     #[error("null byte in string")]
     NulError(#[from] NulError),
     #[error("invalid data")]
     InvalidData,
+    #[error("unrecognized pixel format GUID")]
+    UnrecognizedPixelFormat,
+    #[error("unrecognized color format")]
+    UnrecognizedColorFormat,
+    #[error("unrecognized photometric interpretation")]
+    UnrecognizedInterpretation,
+    #[error("unrecognized bit depth")]
+    UnrecognizedBitDepth,
 
     // C-side errors
     #[error("unknown error")]
@@ -118,12 +126,15 @@ pub enum PixelFormat {
     HDR64bppRGBA,
     HDR64bppPRGBA,
     HDR96bppRGBFixedPoint,
-    HDR96bppRGBFloat
+    HDR96bppRGBFloat,
+
+    // Whatever the hell my NVIDIA screenshots are in
+    HDRMystery,
 }
 use PixelFormat::*;
 
-static GUID_MAP: [(&'static GUID, PixelFormat); 23] = unsafe {
-    [
+static GUID_MAP: &[(&GUID, PixelFormat)] = unsafe {
+    &[
         (&GUID_PKPixelFormatDontCare, DontCare),
         (&GUID_PKPixelFormatBlackWhite, BlackWhite),
         (&GUID_PKPixelFormat8bppGray, SDR8bppGray),
@@ -146,7 +157,8 @@ static GUID_MAP: [(&'static GUID, PixelFormat); 23] = unsafe {
         (&GUID_PKPixelFormat64bppRGBA, HDR64bppRGBA),
         (&GUID_PKPixelFormat64bppPRGBA, HDR64bppPRGBA),
         (&GUID_PKPixelFormat96bppRGBFixedPoint, HDR96bppRGBFixedPoint),
-        (&GUID_PKPixelFormat96bppRGBFloat, HDR96bppRGBFloat)
+        (&GUID_PKPixelFormat96bppRGBFloat, HDR96bppRGBFloat),
+        (&GUID_PKPixelFormatMystery, HDRMystery),
     ]
 };
 
@@ -154,12 +166,16 @@ static GUID_MAP: [(&'static GUID, PixelFormat); 23] = unsafe {
 impl PixelFormat {
 
     fn from_guid(&guid: &GUID) -> Result<Self> {
-        for (&map_guid, map_val) in &GUID_MAP {
+        for (&map_guid, map_val) in GUID_MAP {
             if guid == map_guid {
                 return Ok(*map_val);
             }
         }
-        Err(InvalidData)
+        println!("{0:#x} {1:#x} {2:#x} {3:#x} {4:#x} {5:#x} {6:#x} {7:#x} {8:#x} {9:#x} {10:#x}", guid.Data1, guid.Data2, guid.Data3,
+            guid.Data4[0], guid.Data4[1], guid.Data4[2], guid.Data4[3],
+            guid.Data4[4], guid.Data4[5], guid.Data4[6], guid.Data4[7]
+        );
+        Err(UnrecognizedPixelFormat)
     }
 
 }
@@ -186,7 +202,7 @@ impl ColorFormat {
             COLORFORMAT_NCOMPONENT => Ok(ColorFormat::NComponent),
             COLORFORMAT_CF_RGB => Ok(ColorFormat::RGB),
             COLORFORMAT_CF_RGBE => Ok(ColorFormat::RGBE),
-            _ => Err(InvalidData)
+            _ => Err(UnrecognizedColorFormat)
         }
     }
 }
@@ -222,7 +238,7 @@ impl PhotometricInterpretation {
             PK_PI_CIELab => Ok(CIELab),
             PK_PI_NCH => Ok(NCH),
             PK_PI_RGBE => Ok(RGBE),
-            _ => Err(InvalidData)
+            _ => Err(UnrecognizedInterpretation)
         }
     }
 }
@@ -262,7 +278,7 @@ impl BitDepthBits {
             BITDEPTH_BITS_BD_10 => Ok(Ten),
             BITDEPTH_BITS_BD_565 => Ok(FiveSixFive),
             BITDEPTH_BITS_BD_1alt => Ok(OneAlt),
-            _ => Err(InvalidData)
+            _ => Err(UnrecognizedBitDepth)
         }
     }
 }
