@@ -57,6 +57,14 @@ impl PixelBuffer {
         &mut self.data
     }
 
+    // warning: these assume that stride == width
+    // if that assumption needs to be broken, the fix is:
+    // do a two-level iteration, start over lines
+    // then over pixels in the lines
+    // ideally the iterators can chain into one somehow
+    // otherwise flip it around to a for_each processor
+    // function that takes input and output buffers and
+    // a per-pixel closure to hide the complexity
     fn par_iter(&self) -> rayon::slice::Chunks<u8> {
         self.data.par_chunks(self.bytes_per_pixel)
     }
