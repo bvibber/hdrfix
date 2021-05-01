@@ -1,6 +1,3 @@
-mod jpegxr_sys;
-mod jpegxr;
-
 use std::fs::File;
 use std::path::Path;
 use std::io;
@@ -231,20 +228,20 @@ fn read_jxr(filename: &str)
   -> Result<PixelSource>
 {
     use jpegxr::ImageDecode;
-    use jpegxr::PixelFormat;
+    use jpegxr::PixelFormat::*;
     use jpegxr::Rect;
 
     let input = File::open(filename)?;
-    let mut decoder = ImageDecode::create(input)?;
+    let mut decoder = ImageDecode::with_reader(input)?;
 
     let format = decoder.get_pixel_format()?;
-    if format != PixelFormat::HDR128bppRGBAFloat {
+    if format != PixelFormat128bppRGBAFloat {
         return Err(UnsupportedPixelFormat);
     }
 
     let (width, height) = decoder.get_size()?;
     let bytes_per_pixel = 16;
-    let stride = width * bytes_per_pixel;
+    let stride = width as usize * bytes_per_pixel;
     let mut buffer = PixelBuffer::new(
         width as usize,
         height as usize,
@@ -252,7 +249,7 @@ fn read_jxr(filename: &str)
     );
 
     let rect = Rect::new(0, 0, width, height);
-    decoder.copy(&rect, buffer.get_bytes_mut(), stride as u32)?;
+    decoder.copy(&rect, buffer.get_bytes_mut(), stride)?;
 
     Ok(PixelSource::scrgb_rgb128float(buffer))
 }

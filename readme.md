@@ -4,7 +4,7 @@ This is a tool I wrote for my personal usage dealing with HDR (high dynamic rang
 
 Outputs files as regular SDR (standard dynamic range) PNGs in bog-standard sRGB colorspace. There are a few parameters for adjusting the conversion.
 
-JPEG XR conversion is done by wrapping Microsoft's libjpegxr C library; currently it is bundled with the main source but will be broken out to a crate for separate reuse.
+JPEG XR conversion is done with the `jpegxr` crate, which wraps Microsoft's BSD-licensed JPEG XR codec.
 
 # Author, repo, etc
 
@@ -21,7 +21,7 @@ JPEG XR conversion is done by wrapping Microsoft's libjpegxr C library; currentl
 * glam for vector/matrix math
 * png for reading input PNG
 * mtpng for writing output PNG
-* bindgen for converting C headers to Rust
+* jpegxr for the JPEG XR C libray (and through it, bindgen and cc)
 
 # Installation
 
@@ -86,9 +86,3 @@ cargo build --release
 Requires Rust and Cargo, and a C compiler. On Windows, install Visual Studio Community Edition with C++ development tools or else the command-line build tools. On Linux or Mac there may be some compilation problems at the moment as the jpegxr C library code is still being adapted.
 
 You must install LLVM + Clang to complete a build due to the C code; on Windows you can get a release from https://github.com/llvm/llvm-project/releases/tag/llvmorg-12.0.0 or whatever the current release is. On Linux or Mac, use the system or user-preferred package manager.
-
-# jpegxr library bindings
-
-JPEG XR input is read using Microsoft's BSD-licensed libjpegxr, which I've bundled for now but will later split out to its own crate for ease of reuse.
-
-bindgen is used to create a low-level Rust interface to the C library; the bindings are created automatically as part of the build process
