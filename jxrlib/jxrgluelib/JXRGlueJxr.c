@@ -1918,8 +1918,6 @@ ERR PKImageDecode_Copy_WMP(
     U8* pb,
     U32 cbStride)
 {
-    printf("HEY HEY HEY HEY!\n");
-    fflush(stdout);
     ERR err = WMP_errSuccess;
     U32 cThumbnailScale;
     U32 linesperMBRow;
@@ -1934,16 +1932,12 @@ ERR PKImageDecode_Copy_WMP(
     wmiBI.pv = pb;
     wmiBI.cLine = pRect->Height;
     wmiBI.cbStride = cbStride;
-    printf("HEY HEY HEY HEY?\n");
-    fflush(stdout);
 #ifdef REENTRANT_MODE
     // In REENTRANT_MODE, we allow rectangles with any top left corner (not just (0,0))
 #else
     FailIf(0 != pRect->X, WMP_errInvalidParameter);
     FailIf(0 != pRect->Y, WMP_errInvalidParameter);
 #endif // REENTRANT_MODE
-    printf("HEY HEY HEY HEY...\n");
-    fflush(stdout);
 
     cThumbnailScale = 1;
 	if (pID->WMP.wmiI.cThumbnailWidth > 0)
@@ -1986,9 +1980,7 @@ ERR PKImageDecode_Copy_WMP(
 #ifdef REENTRANT_MODE
         if (0 == pID->WMP.DecoderCurrMBRow) 
         {
-            printf("GetPos\n"); fflush(stdout);
             Call(pID->WMP.wmiSCP.pWStream->GetPos(pID->WMP.wmiSCP.pWStream, &(pID->WMP.cMarker)));
-            printf("ImageStrDecInit\n"); fflush(stdout);
             FailIf(ICERR_OK != ImageStrDecInit(&pID->WMP.wmiI, &pID->WMP.wmiSCP, &pID->WMP.ctxSC), WMP_errFail);
         }
         // Re-entrant mode incurs 1 MBR delay, so to get 0th MBR, we have to ask for 1st MBR
@@ -2003,17 +1995,13 @@ ERR PKImageDecode_Copy_WMP(
             pID->WMP.cLinesDecoded = 0;
             pID->WMP.cLinesCropped = 0;
             pID->WMP.fFirstNonZeroDecode = FALSE;
-            printf("ImageStrDecTerm\n"); fflush(stdout);
             FailIf(ICERR_OK != ImageStrDecTerm(pID->WMP.ctxSC), WMP_errFail);   
-            printf("SetPos\n"); fflush(stdout);
             Call(pID->WMP.wmiSCP.pWStream->SetPos(pID->WMP.wmiSCP.pWStream, pID->WMP.cMarker));
-            printf("ImageStrDecInit 2\n"); fflush(stdout);
             FailIf(ICERR_OK != ImageStrDecInit(&pID->WMP.wmiI, &pID->WMP.wmiSCP, &pID->WMP.ctxSC), WMP_errFail);
         }
 
         // In "Low Memory mode", we don't have full frame buffer. We therefore cannot rotate the image.
         // We can flip H, V and HV, but no rotations.
-        printf("Orientation\n"); fflush(stdout);
         FailIf(pID->WMP.wmiI.oOrientation >= O_RCW, WMP_errFail);
 
         // In low-memory mode, the full frame buffer is unavailable. This doesn't seem to
@@ -2035,7 +2023,6 @@ ERR PKImageDecode_Copy_WMP(
             size_t cLinesDecoded;
             wmiBI.uiFirstMBRow = i;
             wmiBI.uiLastMBRow = i;
-            //printf("ImageStrDecDecode\n"); fflush(stdout);
             FailIf(ICERR_OK != ImageStrDecDecode(pID->WMP.ctxSC, &wmiBI, &cLinesDecoded), WMP_errFail);
             pID->WMP.cLinesDecoded = cLinesDecoded;
             if (FALSE == pID->WMP.fFirstNonZeroDecode && cLinesDecoded > 0)
@@ -2059,7 +2046,6 @@ ERR PKImageDecode_Copy_WMP(
 
         // If we're past the top of the image, then we're done, so terminate.
         if (linesperMBRow * (cMBRow - 1) >= (U32) pID->WMP.cLinesCropped + pID->WMP.wmiI.cROIHeight) {
-            printf("ImageStrDecTerm 2\n"); fflush(stdout);
             FailIf(ICERR_OK != ImageStrDecTerm(pID->WMP.ctxSC), WMP_errFail);        
         }
         pID->WMP.DecoderCurrMBRow = cMBRow; // Set to next possible MBRow that is decodable
@@ -2112,9 +2098,7 @@ ERR PKImageDecode_Copy_WMP(
         }
 
         pID->WMP.wmiSCP_Alpha.fMeasurePerf = TRUE;
-        printf("HELLO_setpos\n");    fflush(stdout);
         Call(pWS->SetPos(pWS, pID->WMP.wmiDEMisc.uAlphaOffset));
-        printf("HELLO_setpos_out\n");    fflush(stdout);
 #ifdef REENTRANT_MODE
         if (0 == pID->WMP.DecoderCurrAlphaMBRow) // add this to WMP struct!
         {
@@ -2149,13 +2133,9 @@ ERR PKImageDecode_Copy_WMP(
         pID->WMP.DecoderCurrAlphaMBRow = cMBRow; // Set to next possible MBRow that is decodable
         wmiBI.pv = pb;
 #else
-        printf("HELLO10\n");    fflush(stdout);
         FailIf(ICERR_OK != ImageStrDecInit(&pID->WMP.wmiI_Alpha, &pID->WMP.wmiSCP_Alpha, &pID->WMP.ctxSC_Alpha), WMP_errFail);
-        printf("HELLO11\n");    fflush(stdout);
         FailIf(ICERR_OK != ImageStrDecDecode(pID->WMP.ctxSC_Alpha, &wmiBI), WMP_errFail);
-        printf("HELLO12\n");    fflush(stdout);
         FailIf(ICERR_OK != ImageStrDecTerm(pID->WMP.ctxSC_Alpha), WMP_errFail);
-        printf("HELLO13\n");    fflush(stdout);
 #endif //REENTRANT_MODE
     }
 

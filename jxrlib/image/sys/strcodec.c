@@ -104,10 +104,8 @@ Int checkImageBuffer(CWMImageStrCodec * pSC, size_t cWidth, size_t cRows)
 
     if(cf == YUV_420)
         cRows = (cRows + 1) / 2;
-    if(cRows > pSC->WMIBI.cLine) {
-        printf("not enough lines\n"); fflush(stdout);
+    if(cRows > pSC->WMIBI.cLine)
         return ICERR_ERROR;
-    }
 
     if(cf == YUV_422 || cf == YUV_420)
         cWidth = (cWidth + 1) / 2;
@@ -115,7 +113,6 @@ Int checkImageBuffer(CWMImageStrCodec * pSC, size_t cWidth, size_t cRows)
     if (bLessThan64Bit && (cWidth >> ((sizeof(size_t) * 8 - 5)))) {
         /** potential overflow - 32 bit pointers insufficient to address cache **/
         /** this uses 2 macroblock row constraint, which is tighter than ensuring rollover doesn't occur below **/
-        printf("overflow width\n"); fflush(stdout);
         return ICERR_ERROR;
     }
 
@@ -123,9 +120,6 @@ Int checkImageBuffer(CWMImageStrCodec * pSC, size_t cWidth, size_t cRows)
         (cf == YUV_420 ? 6 : (cf == YUV_422 ? 4 : (cf == YUV_444 ? 3 : 1))) :
         (bd == BD_1 ? (pSC->WMII.cBitsPerUnit * cWidth + 7) / 8 : (pSC->WMII.cBitsPerUnit + 7) / 8 * cWidth);
 
-    if (cBytes > pSC->WMIBI.cbStride) {
-        printf("stride too small\n"); fflush(stdout);
-    }
     return (cBytes > pSC->WMIBI.cbStride ? ICERR_ERROR : ICERR_OK);
 }
 

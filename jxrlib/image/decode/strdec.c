@@ -895,10 +895,8 @@ Int outputMBRow(CWMImageStrCodec * pSC)
     }
 
     // guard output buffer
-    if(checkImageBuffer(pSC, pSC->WMII.oOrientation >= O_RCW ? pSC->WMII.cROIHeight : pSC->WMII.cROIWidth, cHeight - iFirstRow) != ICERR_OK) {
-        printf("checkImageBuffer\n"); fflush(stdout);
+    if(checkImageBuffer(pSC, pSC->WMII.oOrientation >= O_RCW ? pSC->WMII.cROIHeight : pSC->WMII.cROIWidth, cHeight - iFirstRow) != ICERR_OK)
         return ICERR_ERROR;
-    }
 
     if(pSC->m_bUVResolutionChange)
         interpolateUV(pSC);
@@ -1654,10 +1652,8 @@ Int outputMBRow(CWMImageStrCodec * pSC)
     }
 
     if(pSC->WMISCP.uAlphaMode > 0)
-        if(outputMBRowAlpha(pSC) != ICERR_OK) {
-            printf("outputMBRowAlpha\n"); fflush(stdout);
+        if(outputMBRowAlpha(pSC) != ICERR_OK)
             return ICERR_ERROR;
-        }
 
 #ifdef REENTRANT_MODE
     pSC->WMIBI.cLinesDecoded = cHeight - iFirstRow;
@@ -3428,7 +3424,6 @@ Int ImageStrDecDecode(
 
     if (sizeof(*pSC) != pSC->cbStruct)
     {
-        printf("wrong struct size\n"); fflush(stdout);
         return ICERR_ERROR;
     }
 
@@ -3466,14 +3461,10 @@ Int ImageStrDecDecode(
 #ifdef REENTRANT_MODE
     if (0 == pSC->WMIBI.uiFirstMBRow)
     {
-        if(initLookupTables(pSC) != ICERR_OK) {
-            printf("initLookupTables\n"); fflush(stdout);
+        if(initLookupTables(pSC) != ICERR_OK)
             return ICERR_ERROR;
-        }
-        if (pNextSC && initLookupTables(pNextSC) != ICERR_OK) {
-            printf("init lookup tables next\n"); fflush(stdout);
+        if (pNextSC && initLookupTables(pNextSC) != ICERR_OK)
             return ICERR_ERROR;
-        }
     }
 #else
     if(initLookupTables(pSC) != ICERR_OK)
@@ -3550,36 +3541,28 @@ Int ImageStrDecDecode(
             memset(pSC->m_pNextSC->p1MBbuffer[0], 0, sizeof(PixelI) * 16 * 16 * pSC->m_pNextSC->cmbWidth);
         }
 
-        if(ProcessLeft(pSC) != ICERR_OK) {
-            printf("ProcessLeft\n"); fflush(stdout);
+        if(ProcessLeft(pSC) != ICERR_OK)
             return ICERR_ERROR;
-        }
         advanceMRPtr(pSC);
 
         pSC->Transform = Transform;
         for (pSC->cColumn = 1; pSC->cColumn < pSC->cmbWidth; ++pSC->cColumn)
         {
-            if(ProcessCenter(pSC) != ICERR_OK) {
-                printf("ProessCenter\n"); fflush(stdout);
+            if(ProcessCenter(pSC) != ICERR_OK)
                 return ICERR_ERROR;
-            }
             advanceMRPtr(pSC);
         }
         pSC->Transform = pSC->m_param.cSubVersion == CODEC_SUBVERSION ?
             invTransformMacroblock : invTransformMacroblock_alteredOperators_hard;
 
-        if(ProcessRight(pSC) != ICERR_OK) {
-            printf("ProcessRight\n"); fflush(stdout);
+        if(ProcessRight(pSC) != ICERR_OK)
             return ICERR_ERROR;
-        }
 
         if (pSC->cRow) {
             if(pSC->m_Dparam->cThumbnailScale < 2 && (pSC->m_Dparam->bDecodeFullFrame || 
                 ((pSC->cRow * 16 > pSC->m_Dparam->cROITopY) && (pSC->cRow * 16 <= pSC->m_Dparam->cROIBottomY + 16)))) {
-                if( pSC->Load(pSC) != ICERR_OK ) {// bypass CC for thumbnail decode
-                    //printf("bypass cc for thumbnail decode\n"); fflush(stdout);
+                if( pSC->Load(pSC) != ICERR_OK ) // bypass CC for thumbnail decode
             		return ICERR_ERROR;
-                }
             }
 
             if(pSC->m_Dparam->cThumbnailScale >= 2) // decode thumbnail
@@ -3614,7 +3597,6 @@ Int ImageStrDecDecode(
 #endif // REENTRANT_MODE
 
     PERFTIMER_STOP(pSC->m_fMeasurePerf, pSC->m_ptEncDecPerf);
-    //printf("success\n"); fflush(stdout);
     return ICERR_OK;
 }
 

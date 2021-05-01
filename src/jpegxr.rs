@@ -497,9 +497,7 @@ impl<R> ImageDecode<R> where R: Read + Seek {
 
     pub fn copy(&mut self, rect: &Rect, dest: &mut [u8], stride: u32) -> Result<()> {
         unsafe {
-            println!("hello1");
             call((*self.raw).Copy.unwrap()(self.raw, &rect.raw, dest.as_mut_ptr(), stride))?;
-            println!("hello2");
             Ok(())
         }
     }

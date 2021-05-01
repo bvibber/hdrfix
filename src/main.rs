@@ -211,9 +211,7 @@ fn read_jxr(filename: &str)
     use jpegxr::Rect;
 
     let input = File::open(filename)?;
-    println!("creating");
     let mut decoder = ImageDecode::create(input)?;
-    println!("created");
 
     let format = decoder.get_pixel_format()?;
     if format != PixelFormat::HDR128bppRGBAFloat {
