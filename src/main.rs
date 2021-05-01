@@ -104,31 +104,9 @@ impl PixelSource {
             read_rgb_func: read_scrgb_rgb128float,
         }
     }
-
-    fn read_rgb(&self, bytes: &[u8]) -> Vec3 {
-        (self.read_rgb_func)(bytes)
-    }
-
-    fn map_into<F>(&self, dest: &mut PixelSink, func: F)
-    where F: (Fn(Vec3) -> Vec3) + Sync + Send
-    {
-        let writer = dest.write_rgb_func;
-
-        let in_iter = self.buffer.par_iter();
-        let out_iter = dest.buffer.par_iter_mut();
-        let iter = in_iter.zip(out_iter);
-
-        iter.for_each(|(bytes_in, bytes_out)| {
-            let input_rgb = self.read_rgb(bytes_in);
-            let output_rgb = func(input_rgb);
-            //dest.write_rgb(bytes_out, output_rgb);
-            writer(bytes_out, output_rgb);
-        });
-    }
 }
 
 impl PixelSink {
-
     fn srgb_rgb24(buffer: PixelBuffer) -> Self {
         PixelSink {
             buffer: buffer,
@@ -136,8 +114,21 @@ impl PixelSink {
         }
     }
 
-    fn write_rgb(&self, bytes: &mut [u8], rgb: Vec3) {
-        (self.write_rgb_func)(bytes, rgb)
+    fn map_from<F>(&mut self, source: &PixelSource, func: F)
+    where F: (Fn(Vec3) -> Vec3) + Sync + Send
+    {
+        let reader = source.read_rgb_func;
+        let writer = self.write_rgb_func;
+
+        let in_iter = source.buffer.par_iter();
+        let out_iter = self.buffer.par_iter_mut();
+        let iter = in_iter.zip(out_iter);
+
+        iter.for_each(|(bytes_in, bytes_out)| {
+            let input_rgb = reader(bytes_in);
+            let output_rgb = func(input_rgb);
+            writer(bytes_out, output_rgb);
+        });
     }
 }
 
@@ -397,7 +388,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 
 fn hdr_to_sdr(in_data: &PixelSource, out_data: &mut PixelSink, options: &Options)
 {
-    in_data.map_into(out_data, |rgb| hdr_to_sdr_pixel(rgb, options));
+    out_data.map_from(in_data, |rgb| hdr_to_sdr_pixel(rgb, options));
 }
 
 fn write_png(filename: &str, data: &PixelBuffer)
