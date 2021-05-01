@@ -1,14 +1,16 @@
 # hdrfix - a tool for mapping HDR screenshots to SDR
 
-This is a tool I wrote for my personal usage dealing with HDR (high dynamic range) screenshots of Microsoft Flight Simulator, as taken with Nvidia's GeForce Experience game overlay capture utility which saves a JPEG XR which should contain full 10-bit range, and an 8-bit-per-channel PNG with lower resolution information, but still encoded in BT.2100 color space.
+This is a tool I wrote for my personal usage dealing with HDR (high dynamic range) screenshots of Microsoft Flight Simulator, as taken with Nvidia's GeForce Experience game overlay capture utility which saves a JPEG XR in 32-bit float precision scRGB, and an 8-bit-per-channel PNG with lower resolution information, but encoded with BT.2100 color space and transfer function.
 
-Output files as regular SDR (standard dynamic range) PNGs in bog-standard sRGB colorspace. There are a few parameters for adjusting the conversion.
+Outputs files as regular SDR (standard dynamic range) PNGs in bog-standard sRGB colorspace. There are a few parameters for adjusting the conversion.
+
+JPEG XR conversion is done by wrapping Microsoft's libjpegxr C library; currently it is bundled with the main source but will be broken out to a crate for separate reuse.
 
 # Author, repo, etc
 
 * Brion Vibber `<brion @ pobox.com>`
 * https://github.com/brion/hdrfix
-* license: MIT
+* license: MIT (wrapper and conversion code), BSD (jpegxr library)
 
 # Dependencies
 
@@ -19,10 +21,17 @@ Output files as regular SDR (standard dynamic range) PNGs in bog-standard sRGB c
 * glam for vector/matrix math
 * png for reading input PNG
 * mtpng for writing output PNG
+* bindgen for converting C headers to Rust
 
 # Installation
 
-(untested, not yet published)
+From source checkout:
+
+```
+cargo install --path=.
+```
+
+From crates.io:
 
 ```
 cargo install hdrfix
@@ -54,7 +63,8 @@ Adjustable parmeters:
 
 Definitely/short-term:
 * auto-output-filename feature to make it easier to use on live folders
-* [IN PROGRESS] add JPEG XR input (should reduce banding in sky vs using the PNGs)
+* add linear shift (additive), scale (multiplicative), and gamma (power) options, in that order on input and in opposite order on output
+* allow auto-set of the pre-shift/pre-scale with histogram percentiles
 * add JPEG output
 * add compression params for JPEG output
 
