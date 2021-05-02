@@ -52,10 +52,12 @@ hdrfix --help
 ```
 
 Adjustable parmeters:
-* `--sdr-white=N` linearly scales the input signal such that a signal representing standard dark-room SDR white point of 80 nits is scaled up to the given value instead. The default is `80`, passing through the standard signal. A higher value will darken the image linearly, and may be appropriate for matching on-screen display depending on the configuration of the machine capturing the source material.
-* `--hdr-max=N` sets the maximum luminance level for the Reinhard tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of slightly poorer contrast in highlights. The default is `10000` nits which is the maximum for HDR10 input. A lower value will cause very bright details to blow out, but slightly lighten dark areas.
-* `--gamma=N` applies a power curve against the tone-mapped luminance signal before saving. The default is `1.0`, which is linear. A modest gamma of `1.2` or `1.4` will boost contrast a little.
+* `--pre-scale=N` multiplies the input signal. The default is `1.0`, passing through the original signal.
+* `--pre-gamma-N` applies an exponential gamma curve to the input after scaling. The default is `1.0`, passing through the original signal.
 * `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `reinhard-luma` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `reinhard-luma`.
+* `--hdr-max=N` sets the maximum luminance level for the Reinhard tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of slightly poorer contrast in highlights. The default is `10000` nits which is the maximum for HDR10 input. A lower value will cause very bright details to blow out, but slightly lighten dark areas.
+* `--post-gamma-N` applies an exponential gamma curve to the output after tone mapping. The default is `1.0`, passing through the original signal.
+* `--post-scale=N` multiplies the output signal. The default is `1.0`, passing through the original signal.
 * `--color-map=A` sets the color-mapping algorithm for out of gamut colors after tone-mapping. Choices are `clip` which can alter color and brightness, `darken` which can cause major shifts in relative contrast but preserves color precisely, or `desaturate` which preserves luminance but desaturates color as necessary to fit in gamut. Deafult is `desaturate`.
 
 
@@ -63,7 +65,6 @@ Adjustable parmeters:
 
 Definitely/short-term:
 * auto-output-filename feature to make it easier to use on live folders
-* add linear shift (additive), scale (multiplicative), and gamma (power) options, in that order on input and in opposite order on output
 * allow auto-set of the pre-shift/pre-scale with histogram percentiles
 * add JPEG output
 * add compression params for JPEG output

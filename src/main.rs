@@ -157,10 +157,12 @@ fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
 }
 
 struct Options {
-    sdr_white: f32,
+    pre_scale: f32,
+    pre_gamma: f32,
     hdr_max: f32,
-    gamma: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
+    post_gamma: f32,
+    post_scale: f32,
     color_map: fn(Vec3) -> Vec3,
 }
 
@@ -304,7 +306,7 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     let luma_in = luma_srgb(c_in);
-    let white = options.hdr_max / options.sdr_white;
+    let white = options.pre_scale * options.hdr_max / 80.0;
     let white2 = white * white;
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
     let c_out = c_in * (luma_out / luma_in);
@@ -315,10 +317,18 @@ fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
     // Variant that maps R, G, and B channels separately.
     // This should desaturate very bright colors gradually, but will
     // possible cause some color shift.
-    let white = options.hdr_max / options.sdr_white;
+    let white = options.pre_scale * options.hdr_max / 80.0;
     let white2 = white * white;
     let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
     c_out
+}
+
+fn tonemap_reinhard_blend(c_in: Vec3, options: &Options) -> Vec3 {
+    // luma mode boosts chroma too much at high end
+    // rgb mode desaturates and shifts too much
+    let luma = tonemap_reinhard_luma(c_in, options);
+    let rgb = tonemap_reinhard_rgb(c_in, options);
+    (luma + rgb) / 2.0
 }
 
 fn clip(input: Vec3) -> Vec3 {
@@ -344,19 +354,21 @@ fn color_desaturate(c_in: Vec3) -> Vec3
 {
     // algorithm of my own devise
     // only for colors out of gamut, desaturate until it matches luminance,
-    // then clip anything that ends up out of bounds still (shouldn't happen)
-    let luma_out = luma_srgb(c_in);
+    // or clip anything with luminance out of bounds to white
     let luma_in = luma_srgb(c_in);
-    let scaled = c_in * (luma_out / luma_in);
-    let max = scaled.max_element();
-    if max > 1.0 {
-        let white = Vec3::splat(luma_out);
-        let diff = scaled - white;
-        let ratio = (max - 1.0) / max;
-        let desaturated = scaled - diff * ratio;
-        clip(desaturated)
+    if luma_in > 1.0 {
+        Vec3::ONE
     } else {
-        scaled
+        let max = c_in.max_element();
+        if max > 1.0 {
+            let white = Vec3::splat(luma_in);
+            let diff = c_in - white;
+            let ratio = (max - 1.0) / max;
+            let desaturated = c_in - diff * ratio;
+            clip(desaturated)
+        } else {
+            c_in
+        }
     }
 }
 
@@ -372,14 +384,13 @@ const BT2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 
 fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
-    // 1.0 in scRGB should == the SDR white level
-    let scale = 80.0 / options.sdr_white;
-
     let mut val = rgb_scrgb;
-    val = val * scale;
+    val = val * options.pre_scale;
+    val = apply_gamma(val, options.pre_gamma);
     val = (options.tone_map)(val, &options);
+    val = apply_gamma(val, options.post_gamma);
+    val = val * options.post_scale;
     val = (options.color_map)(val);
-    val = apply_gamma(val, options.gamma);
     val
 }
 
@@ -425,21 +436,24 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     })?;
 
     let options = Options {
-        sdr_white: args.value_of("sdr-white").unwrap().parse::<f32>()?,
-        hdr_max: args.value_of("hdr-max").unwrap().parse::<f32>()?,
-        gamma: args.value_of("gamma").unwrap().parse::<f32>()?,
+        pre_scale: args.value_of("pre-scale").unwrap().parse::<f32>()?,
+        pre_gamma: args.value_of("pre-gamma").unwrap().parse::<f32>()?,
         tone_map: match args.value_of("tone-map").unwrap() {
             "linear" => tonemap_linear,
             "reinhard-luma" => tonemap_reinhard_luma,
             "reinhard-rgb" => tonemap_reinhard_rgb,
+            "reinhard-blend" => tonemap_reinhard_blend,
             _ => unreachable!("bad tone-map option")
         },
+        hdr_max: args.value_of("hdr-max").unwrap().parse::<f32>()?,
         color_map: match args.value_of("color-map").unwrap() {
             "clip" => color_clip,
             "darken" => color_darken,
             "desaturate" => color_desaturate,
             _ => unreachable!("bad color-map option")
         },
+        post_gamma: args.value_of("post-gamma").unwrap().parse::<f32>()?,
+        post_scale: args.value_of("post-scale").unwrap().parse::<f32>()?,
     };
 
     let width = source.buffer.width as usize;
@@ -471,27 +485,33 @@ fn main() {
             .help("Output filename, must be .png.")
             .required(true)
             .index(2))
-        .arg(Arg::with_name("sdr-white")
-            .help("SDR white point, in nits.")
-            .long("sdr-white")
-            // 80 nits is the nominal SDR white point in a dark room.
-            // Bright rooms often set SDR balance point brighter!
-            .default_value("80"))
-        .arg(Arg::with_name("hdr-max")
-            .help("Max HDR luminance level to preserve, in nits.")
-            .long("hdr-max")
-            .default_value("10000"))
-        .arg(Arg::with_name("gamma")
-            .help("Gamma curve to apply on tone-mapped luminance values.")
-            .long("gamma")
+        .arg(Arg::with_name("pre-scale")
+            .help("Multiplicative scaling on linear input.")
+            .long("pre-scale")
+            .default_value("1.0"))
+        .arg(Arg::with_name("pre-gamma")
+            .help("Gamma power to apply on linear input, after scaling.")
+            .long("pre-gamma")
             .default_value("1.0"))
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard-luma", "reinhard-rgb"])
+            .possible_values(&["linear", "reinhard-luma", "reinhard-rgb", "reinhard-blend"])
             .default_value("reinhard-luma"))
+        .arg(Arg::with_name("hdr-max")
+            .help("Max HDR luminance level for Reinhard algorithm, in nits.")
+            .long("hdr-max")
+            .default_value("10000"))
+        .arg(Arg::with_name("post-gamma")
+            .help("Gamma curve to apply on tone-mapped luminance values.")
+            .long("post-gamma")
+            .default_value("1.0"))
+        .arg(Arg::with_name("post-scale")
+            .help("Multiplicative scaling on linear output.")
+            .long("post-scale")
+            .default_value("1.0"))
         .arg(Arg::with_name("color-map")
-            .help("Method for mapping colors and fixing out of gamut.")
+            .help("Method for mapping and fixing out of gamut colors.")
             .long("color-map")
             .possible_values(&["clip", "darken", "desaturate"])
             .default_value("desaturate"))
