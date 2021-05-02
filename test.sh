@@ -1,5 +1,12 @@
 convert() {
-    cargo run --release -- --pre-scale=0.3333 --hdr-max=1000 --tone-map=reinhard-luma --desaturation-coeff=0.75 --histogram --histogram-max=0.995 samples/"$1"-hdr.jxr samples/"$1"-sdr.png
+    cargo run --release -- \
+        --pre-scale=0.2 \
+        --tone-map=reinhard-luma \
+        --desaturation-coeff=0.9 \
+        --histogram \
+        --histogram-max=0.9875 \
+        samples/"$1"-hdr.jxr \
+        samples/"$1"-sdr.png
 }
 
 convert burbank
