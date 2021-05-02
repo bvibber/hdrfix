@@ -18,60 +18,83 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, LocalError>;
 
+struct Options {
+    pre_scale: f32,
+    pre_gamma: f32,
+    hdr_max: f32,
+    desaturation_coeff: f32,
+    mantiuk_c: f32,
+    tone_map: fn(Vec3, &Options) -> Vec3,
+    post_gamma: f32,
+    post_scale: f32,
+    color_map: fn(Vec3) -> Vec3,
+    histogram: bool,
+    histogram_min: f32,
+    histogram_max: f32,
+}
+
+enum PixelFormat {
+    SDR8bit,
+    HDR8bit,
+    HDRFloat32,
+}
+use PixelFormat::*;
+
 // Note: currently assumes stride == width
 struct PixelBuffer {
     width: usize,
     height: usize,
     bytes_per_pixel: usize,
     data: Vec::<u8>,
-}
 
-// If you wanted these could be traits
-// but we don't need that level of complexity
-struct PixelSource {
-    buffer: PixelBuffer,
+    // If we wanted these could be traits
+    // but we don't need that level of complexity
     read_rgb_func: fn(&[u8]) -> Vec3,
-}
-
-struct PixelSink {
-    buffer: PixelBuffer,
     write_rgb_func: fn(&mut [u8], Vec3),
 }
 
 impl PixelBuffer {
-    fn new(width: usize, height: usize, bytes_per_pixel: usize) -> Self {
+    fn new(width: usize, height: usize, format: PixelFormat) -> Self {
+        let bytes_per_pixel = match format {
+            SDR8bit | HDR8bit => 3,
+            HDRFloat32 => 16,
+        };
+        let read_rgb_func = match format {
+            SDR8bit => read_srgb_rgb24,
+            HDR8bit => read_rec2100_rgb24,
+            HDRFloat32 => read_scrgb_rgb128float
+        };
+        let write_rgb_func = match format {
+            SDR8bit => write_srgb_rgb24,
+            HDR8bit => write_rec2100_rgb24,
+            HDRFloat32 => write_scrgb_rgb128float
+        };
         let stride = width * bytes_per_pixel;
         let size = stride * height;
         let mut data = Vec::<u8>::with_capacity(size);
         data.resize(size, 0);
-        Self::with_vec(width, height, bytes_per_pixel, data)
-    }
-
-    fn with_vec(width: usize, height: usize, bytes_per_pixel: usize, data: Vec<u8>) -> Self {
         PixelBuffer {
             width: width,
             height: height,
             bytes_per_pixel: bytes_per_pixel,
             data: data,
+            read_rgb_func: read_rgb_func,
+            write_rgb_func: write_rgb_func
         }
     }
 
-    fn get_bytes(&self) -> &[u8] {
+    fn bytes(&self) -> &[u8] {
         &self.data
     }
 
-    fn get_bytes_mut(&mut self) -> &mut[u8] {
+    fn bytes_mut(&mut self) -> &mut[u8] {
         &mut self.data
     }
 
-    // warning: these assume that stride == width
-    // if that assumption needs to be broken, the fix is:
-    // do a two-level iteration, start over lines
-    // then over pixels in the lines
-    // ideally the iterators can chain into one somehow
-    // otherwise flip it around to a for_each processor
-    // function that takes input and output buffers and
-    // a per-pixel closure to hide the complexity
+    fn iter(&self) -> std::slice::Chunks<u8> {
+        self.data.chunks(self.bytes_per_pixel)
+    }
+
     fn par_iter(&self) -> rayon::slice::Chunks<u8> {
         self.data.par_chunks(self.bytes_per_pixel)
     }
@@ -79,46 +102,24 @@ impl PixelBuffer {
     fn par_iter_mut(&mut self) -> rayon::slice::ChunksMut<u8> {
         self.data.par_chunks_mut(self.bytes_per_pixel)
     }
-}
 
-impl PixelSource {
-    fn bt2100_rgb24(buffer: PixelBuffer) -> Self {
-        if buffer.bytes_per_pixel != 3 {
-            panic!("wrong bit depth");
-        }
-        PixelSource {
-            buffer: buffer,
-            read_rgb_func: read_bt2100_rgb24,
-        }
+    fn for_each<F>(&self, mut func: F)
+    where F: FnMut(Vec3) {
+        let reader = self.read_rgb_func;
+        self.iter().for_each(|bytes_in| {
+            let input_rgb = reader(bytes_in);
+            func(input_rgb);
+        })
     }
 
-    fn scrgb_rgb128float(buffer: PixelBuffer) -> Self {
-        if buffer.bytes_per_pixel != 16 {
-            panic!("wrong bit depth");
-        }
-        PixelSource {
-            buffer: buffer,
-            read_rgb_func: read_scrgb_rgb128float,
-        }
-    }
-}
-
-impl PixelSink {
-    fn srgb_rgb24(buffer: PixelBuffer) -> Self {
-        PixelSink {
-            buffer: buffer,
-            write_rgb_func: write_srgb_rgb24,
-        }
-    }
-
-    fn map_from<F>(&mut self, source: &PixelSource, func: F)
+    fn map_from<F>(&mut self, source: &PixelBuffer, func: F)
     where F: (Fn(Vec3) -> Vec3) + Sync + Send
     {
         let reader = source.read_rgb_func;
         let writer = self.write_rgb_func;
 
-        let in_iter = source.buffer.par_iter();
-        let out_iter = self.buffer.par_iter_mut();
+        let in_iter = source.par_iter();
+        let out_iter = self.par_iter_mut();
         let iter = in_iter.zip(out_iter);
 
         iter.for_each(|(bytes_in, bytes_out)| {
@@ -129,11 +130,8 @@ impl PixelSink {
     }
 }
 
-fn read_bt2100_rgb24(data: &[u8]) -> Vec3 {
-    let scale = Vec3::splat(1.0 / 255.0);
-    let rgb_bt2100 = Vec3::new(data[0] as f32, data[1] as f32, data[2] as f32) * scale;
-    let rgb_linear = pq_to_linear(rgb_bt2100);
-    bt2100_to_scrgb(rgb_linear)
+fn read_srgb_rgb24(_data: &[u8]) -> Vec3 {
+    panic!("not yet implemented");
 }
 
 fn write_srgb_rgb24(data: &mut [u8], val: Vec3)
@@ -146,6 +144,17 @@ fn write_srgb_rgb24(data: &mut [u8], val: Vec3)
     data[2] = scaled.z as u8;
 }
 
+fn read_rec2100_rgb24(data: &[u8]) -> Vec3 {
+    let scale = Vec3::splat(1.0 / 255.0);
+    let rgb_rec2100 = Vec3::new(data[0] as f32, data[1] as f32, data[2] as f32) * scale;
+    let rgb_linear = pq_to_linear(rgb_rec2100);
+    rec2100_to_scrgb(rgb_linear)
+}
+
+fn write_rec2100_rgb24(_data: &mut [u8], _rgb: Vec3) {
+    panic!("not yet implemented");
+}
+
 fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
     let data_ref_f32: &f32 = unsafe {
         std::mem::transmute(&data[0])
@@ -156,17 +165,18 @@ fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
     Vec3::new(data_f32[0], data_f32[1], data_f32[2])
 }
 
-struct Options {
-    pre_scale: f32,
-    pre_gamma: f32,
-    hdr_max: f32,
-    desaturation_coeff: f32,
-    mantiuk_c: f32,
-    tone_map: fn(Vec3, &Options) -> Vec3,
-    post_gamma: f32,
-    post_scale: f32,
-    color_map: fn(Vec3) -> Vec3,
+fn write_scrgb_rgb128float(data: &mut [u8], rgb: Vec3) {
+    let data_ref_f32: &mut f32 = unsafe {
+        std::mem::transmute(&mut data[0])
+    };
+    let data_f32 = &mut unsafe {
+        std::slice::from_raw_parts_mut(data_ref_f32, data.len())
+    };
+    data_f32[0] = rgb.x;
+    data_f32[1] = rgb.y;
+    data_f32[2] = rgb.z;
 }
+
 
 #[derive(Error, Debug)]
 enum LocalError {
@@ -200,7 +210,7 @@ fn time_func<F, G>(msg: &str, func: F) -> Result<G>
 // Read an input PNG and return its size and contents
 // It must be a certain format (8bpp true color no alpha)
 fn read_png(filename: &str)
-    -> Result<PixelSource>
+    -> Result<PixelBuffer>
 {
     use png::Decoder;
     use png::Transformations;
@@ -217,19 +227,18 @@ fn read_png(filename: &str)
         return Err(PNGFormatError);
     }
 
-    let bytes_per_pixel = 3;
     let mut buffer = PixelBuffer::new(
         info.width as usize,
         info.height as usize,
-        bytes_per_pixel
+        HDR8bit
     );
-    reader.next_frame(buffer.get_bytes_mut())?;
+    reader.next_frame(buffer.bytes_mut())?;
 
-    Ok(PixelSource::bt2100_rgb24(buffer))
+    Ok(buffer)
 }
 
 fn read_jxr(filename: &str)
-  -> Result<PixelSource>
+  -> Result<PixelBuffer>
 {
     use jpegxr::ImageDecode;
     use jpegxr::PixelFormat::*;
@@ -249,13 +258,13 @@ fn read_jxr(filename: &str)
     let mut buffer = PixelBuffer::new(
         width as usize,
         height as usize,
-        bytes_per_pixel as usize
+        HDRFloat32
     );
 
     let rect = Rect::new(0, 0, width, height);
-    decoder.copy(&rect, buffer.get_bytes_mut(), stride)?;
+    decoder.copy(&rect, buffer.bytes_mut(), stride)?;
 
-    Ok(PixelSource::scrgb_rgb128float(buffer))
+    Ok(buffer)
 }
 
 fn pq_to_linear(val: Vec3) -> Vec3 {
@@ -271,13 +280,13 @@ fn pq_to_linear(val: Vec3) -> Vec3 {
     ).powf(inv_m1)
 }
 
-fn bt2100_to_scrgb(val: Vec3) -> Vec3 {
+fn rec2100_to_scrgb(val: Vec3) -> Vec3 {
     let matrix = Mat3::from_cols_array(&[
         1.6605, -0.1246, -0.0182,
         -0.5876, 1.1329, -0.1006,
         -0.0728, -0.0083, 1.1187
     ]);
-    let scale = BT2100_MAX / 80.0;
+    let scale = REC2100_MAX / 80.0;
     matrix.mul_vec3(val * scale)
 }
 
@@ -402,7 +411,7 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
     clip(Vec3::select(val.cmple(min), linear, gamma))
 }
 
-const BT2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
+const REC2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 
 fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
@@ -416,7 +425,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
     val
 }
 
-fn hdr_to_sdr(in_data: &PixelSource, out_data: &mut PixelSink, options: &Options)
+fn hdr_to_sdr(in_data: &PixelBuffer, out_data: &mut PixelBuffer, options: &Options)
 {
     out_data.map_from(in_data, |rgb| hdr_to_sdr_pixel(rgb, options));
 }
@@ -440,10 +449,46 @@ fn write_png(filename: &str, data: &PixelBuffer)
     let mut encoder = Encoder::new(writer, &options);
 
     encoder.write_header(&header)?;
-    encoder.write_image_rows(data.get_bytes())?;
+    encoder.write_image_rows(data.bytes())?;
     encoder.finish()?;
 
     Ok(())
+}
+
+struct Histogram {
+    luma_vals: Vec<f32>,
+}
+
+impl Histogram {
+    fn new(source: &PixelBuffer) -> Self {
+        let pixels = source.width * source.height;
+        let mut luma_vals: Vec<f32> = Vec::with_capacity(pixels);
+        luma_vals.resize(pixels, 0.0);
+        source.for_each(|rgb| {
+            let luma = luma_scrgb(rgb);
+            luma_vals.push(luma);
+        });
+        luma_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        Self {
+            luma_vals: luma_vals,
+        }
+    }
+
+    fn percentile(&self, target: f32) -> f32{
+        let max_index = self.luma_vals.len() - 1;
+        let target_index = (max_index as f32 * target) as usize;
+        self.luma_vals[target_index]
+    }
+
+    fn apply_levels(&self, source: &PixelBuffer, dest: &mut PixelBuffer, options: &Options) {
+        let level_min = self.percentile(options.histogram_min);
+        let level_max = self.percentile(options.histogram_max);
+        let offset = Vec3::splat(level_min);
+        let scale = Vec3::splat(level_max - level_min);
+        dest.map_from(source, |rgb| {
+            (rgb - offset) / scale
+        })
+    }
 }
 
 fn hdrfix(args: ArgMatches) -> Result<String> {
@@ -478,20 +523,38 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         },
         post_gamma: args.value_of("post-gamma").unwrap().parse::<f32>()?,
         post_scale: args.value_of("post-scale").unwrap().parse::<f32>()?,
+        histogram: args.is_present("histogram"),
+        histogram_min: args.value_of("histogram-min").unwrap().parse::<f32>()?,
+        histogram_max: args.value_of("histogram-max").unwrap().parse::<f32>()?,
     };
 
-    let width = source.buffer.width as usize;
-    let height = source.buffer.height as usize;
-    let bytes_per_pixel = 3;
-    let buffer = PixelBuffer::new(width, height, bytes_per_pixel);
-    let mut sink = PixelSink::srgb_rgb24(buffer);
+    let width = source.width as usize;
+    let height = source.height as usize;
+    let format = if options.histogram {
+        HDRFloat32
+    } else {
+        SDR8bit
+    };
+    let mut tone_mapped = PixelBuffer::new(width, height, format);
     time_func("hdr_to_sdr", || {
-        Ok(hdr_to_sdr(&source, &mut sink, &options))
+        Ok(hdr_to_sdr(&source, &mut tone_mapped, &options))
     })?;
+
+    // apply histogram expansion
+    let dest = if options.histogram {
+        time_func("histogram", || {
+            let mut dest = PixelBuffer::new(width, height, SDR8bit);
+            let histogram = Histogram::new(&tone_mapped);
+            histogram.apply_levels(&tone_mapped, &mut dest, &options);
+            Ok(dest)
+        })?
+    } else {
+        tone_mapped
+    };
 
     let output_filename = args.value_of("output").unwrap();
     time_func("write_png", || {
-        write_png(output_filename, &sink.buffer)
+        write_png(output_filename, &dest)
     })?;
 
     return Ok(output_filename.to_string());
@@ -541,6 +604,19 @@ fn main() {
         .arg(Arg::with_name("post-scale")
             .help("Multiplicative scaling on linear output.")
             .long("post-scale")
+            .default_value("1.0"))
+        .arg(Arg::with_name("histogram")
+            .help("Expand the final output contrast based on a histogram. \
+            Use --histogram-min and --histogram-max to set luminance percentiles \
+            (in 0..1 space) to expand from.")
+            .long("histogram"))
+        .arg(Arg::with_name("histogram-min")
+            .help("Minimum portion of histogram levels to retain in output.")
+            .long("histogram-min")
+            .default_value("0.0"))
+        .arg(Arg::with_name("histogram-max")
+            .help("Maximum portion of histogram levels to retain in output.")
+            .long("histogram-max")
             .default_value("1.0"))
         .arg(Arg::with_name("color-map")
             .help("Method for mapping and fixing out of gamut colors.")

@@ -60,13 +60,14 @@ Adjustable parmeters:
 * `--post-gamma-N` applies an exponential gamma curve to the output after tone mapping. The default is `1.0`, passing through the original signal.
 * `--post-scale=N` multiplies the output signal. The default is `1.0`, passing through the original signal.
 * `--color-map=A` sets the color-mapping algorithm for out of gamut colors after tone-mapping. Choices are `clip` which can alter color and brightness, `darken` which can cause major shifts in relative contrast but preserves color precisely, or `desaturate` which preserves luminance but desaturates color as necessary to fit in gamut. Deafult is `desaturate`.
-
+* `--histogram` calculates a luminane histogram from the output, then stretches the total luminance range of the output to fit. If none of your pixels reach maximum brightness, this will brighten your image. Default is off (no histogram is calculated and no dynamic range expansion is done on output).
+* `--histogram-min` percentile (in 0..1 space) below which to flatten darks to black. Defaults to `0.0`.
+* `--histogram-max` perentile (in 0..1 space) above which to flatten brights to white. Defaults to `1.0`.
 
 # Todo / roadmap
 
 Definitely/short-term:
 * auto-output-filename feature to make it easier to use on live folders
-* allow auto-set of the pre-shift/pre-scale with histogram percentiles
 * add JPEG output
 * add compression params for JPEG output
 
