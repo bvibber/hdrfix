@@ -317,8 +317,13 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
 
     // correcting version based on equation 2 from Mantiuk 2009
     // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
+    //let s = options.desaturation_coeff;
+    //let c_out = (c_in / luma_in).powf(s) * luma_out;
+
+    // correcting version based on equation 3 from Mantiuk 2009
     let s = options.desaturation_coeff;
-    let c_out = (c_in / luma_in).powf(s) * luma_out;
+    // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
+    let c_out = (((c_in / luma_in) - Vec3::ONE) * s + Vec3::ONE) * luma_out;
 
     c_out
 }
