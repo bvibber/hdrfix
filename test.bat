@@ -16,5 +16,5 @@ exit /b %ERRORLEVEL%
 
 
 :convert
-cargo run --release -- --pre-scale=0.3333 --hdr-max=1000 --tone-map=reinhard-rgb samples\%1.png samples\%1-sdr.png
+cargo run --release -- --pre-scale=0.3333 --hdr-max=1000 --tone-map=reinhard-luma --desaturation-coeff=0.75 samples\%1.png samples\%1-sdr.png
 exit /b 0

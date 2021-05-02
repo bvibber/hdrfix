@@ -160,6 +160,8 @@ struct Options {
     pre_scale: f32,
     pre_gamma: f32,
     hdr_max: f32,
+    desaturation_coeff: f32,
+    mantiuk_c: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
     post_gamma: f32,
     post_scale: f32,
@@ -283,7 +285,7 @@ const KR: f32 = 0.2126;
 const KG: f32 = 0.7152;
 const KB: f32 = 0.0722;
 
-fn luma_srgb(val: Vec3) -> f32 {
+fn luma_scrgb(val: Vec3) -> f32 {
     val.x * KR + val.y * KG + val.z * KB
 }
 
@@ -305,11 +307,19 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
     // https://64.github.io/tonemapping/#reinhard
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
-    let luma_in = luma_srgb(c_in);
+    let luma_in = luma_scrgb(c_in);
     let white = options.pre_scale * options.hdr_max / 80.0;
     let white2 = white * white;
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
-    let c_out = c_in * (luma_out / luma_in);
+
+    // simple version, no desaturation correction
+    //let c_out = c_in * (luma_out / luma_in);
+
+    // correcting version based on equation 2 from Mantiuk 2009
+    // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
+    let s = options.desaturation_coeff;
+    let c_out = (c_in / luma_in).powf(s) * luma_out;
+
     c_out
 }
 
@@ -323,12 +333,19 @@ fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
     c_out
 }
 
-fn tonemap_reinhard_blend(c_in: Vec3, options: &Options) -> Vec3 {
-    // luma mode boosts chroma too much at high end
-    // rgb mode desaturates and shifts too much
-    let luma = tonemap_reinhard_luma(c_in, options);
-    let rgb = tonemap_reinhard_rgb(c_in, options);
-    (luma + rgb) / 2.0
+fn tonemap_mantiuk(c_in: Vec3, options: &Options) -> Vec3 {
+    // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
+
+    // Equation 4: tone-mapping
+    let c = options.mantiuk_c;
+    let b = 1.0 / (options.hdr_max / 80.0);
+    let l_in = luma_scrgb(c_in);
+    let l_out = (l_in * b).powf(c);
+
+    // Equation 3: color preservation
+    let s = c;
+    let c_out = (((c_in / l_in) - Vec3::ONE) * s + Vec3::ONE) * l_out;
+    c_out
 }
 
 fn clip(input: Vec3) -> Vec3 {
@@ -355,7 +372,7 @@ fn color_desaturate(c_in: Vec3) -> Vec3
     // algorithm of my own devise
     // only for colors out of gamut, desaturate until it matches luminance,
     // or clip anything with luminance out of bounds to white
-    let luma_in = luma_srgb(c_in);
+    let luma_in = luma_scrgb(c_in);
     if luma_in > 1.0 {
         Vec3::ONE
     } else {
@@ -442,10 +459,12 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
             "linear" => tonemap_linear,
             "reinhard-luma" => tonemap_reinhard_luma,
             "reinhard-rgb" => tonemap_reinhard_rgb,
-            "reinhard-blend" => tonemap_reinhard_blend,
+            "mantiuk" => tonemap_mantiuk,
             _ => unreachable!("bad tone-map option")
         },
         hdr_max: args.value_of("hdr-max").unwrap().parse::<f32>()?,
+        desaturation_coeff: args.value_of("desaturation-coeff").unwrap().parse::<f32>()?,
+        mantiuk_c: args.value_of("mantiuk-c").unwrap().parse::<f32>()?,
         color_map: match args.value_of("color-map").unwrap() {
             "clip" => color_clip,
             "darken" => color_darken,
@@ -496,12 +515,20 @@ fn main() {
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard-luma", "reinhard-rgb", "reinhard-blend"])
+            .possible_values(&["linear", "reinhard-luma", "reinhard-rgb", "mantiuk"])
             .default_value("reinhard-luma"))
         .arg(Arg::with_name("hdr-max")
-            .help("Max HDR luminance level for Reinhard algorithm, in nits.")
+            .help("Max HDR luminance level for Reinhard and Mantiuk algorithms, in nits.")
             .long("hdr-max")
             .default_value("10000"))
+        .arg(Arg::with_name("desaturation-coeff")
+            .help("Desaturation coefficient for Reinhard luminance to chroma mapping.")
+            .long("desaturation-coeff")
+            .default_value("1.0"))
+        .arg(Arg::with_name("mantiuk-c")
+            .help("The 'c' contrast compression factor for Mantiuk tone-mapping.")
+            .long("mantiuk-c")
+            .default_value("1.0"))
         .arg(Arg::with_name("post-gamma")
             .help("Gamma curve to apply on tone-mapped luminance values.")
             .long("post-gamma")

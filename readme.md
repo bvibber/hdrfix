@@ -55,6 +55,7 @@ Adjustable parmeters:
 * `--pre-scale=N` multiplies the input signal. The default is `1.0`, passing through the original signal.
 * `--pre-gamma-N` applies an exponential gamma curve to the input after scaling. The default is `1.0`, passing through the original signal.
 * `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `reinhard-luma` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `reinhard-luma`.
+* `--desaturation-coeff` sets the desaturation coefficient for chroma mapping in the Reinhard luma version. Default is `1.0` (no desaturation), but `0.75` looks nice on my test images.
 * `--hdr-max=N` sets the maximum luminance level for the Reinhard tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of slightly poorer contrast in highlights. The default is `10000` nits which is the maximum for HDR10 input. A lower value will cause very bright details to blow out, but slightly lighten dark areas.
 * `--post-gamma-N` applies an exponential gamma curve to the output after tone mapping. The default is `1.0`, passing through the original signal.
 * `--post-scale=N` multiplies the output signal. The default is `1.0`, passing through the original signal.
