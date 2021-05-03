@@ -10,6 +10,7 @@ call :convert panel
 call :convert portland
 call :convert sanfran
 call :convert spitfire
+call :convert sunrise
 call :convert usbank
 
 exit /b %ERRORLEVEL%

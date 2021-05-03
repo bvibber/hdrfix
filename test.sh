@@ -20,4 +20,5 @@ convert panel
 convert portland
 convert sanfran
 convert spitfire
+convert sunrise
 convert usbank
