@@ -91,41 +91,28 @@ impl PixelBuffer {
         &mut self.data
     }
 
-    fn iter(&self) -> std::slice::Chunks<u8> {
-        self.data.chunks(self.bytes_per_pixel)
-    }
-
-    fn par_iter(&self) -> rayon::slice::Chunks<u8> {
+    fn par_iter_bytes<'a>(&'a self) -> impl IndexedParallelIterator<Item = &'a [u8]> {
         self.data.par_chunks(self.bytes_per_pixel)
     }
 
-    fn par_iter_mut(&mut self) -> rayon::slice::ChunksMut<u8> {
+    fn par_iter_bytes_mut<'a>(&'a mut self) -> impl IndexedParallelIterator<Item = &'a mut [u8]> {
         self.data.par_chunks_mut(self.bytes_per_pixel)
     }
 
-    fn for_each<F>(&self, mut func: F)
-    where F: FnMut(Vec3) {
-        let reader = self.read_rgb_func;
-        self.iter().for_each(|bytes_in| {
-            let input_rgb = reader(bytes_in);
-            func(input_rgb);
-        })
+    fn par_iter_rgb<'a>(&'a self) -> impl 'a + IndexedParallelIterator<Item = Vec3> {
+        self.par_iter_bytes().map(self.read_rgb_func)
     }
 
-    fn map_from<F>(&mut self, source: &PixelBuffer, func: F)
-    where F: (Fn(Vec3) -> Vec3) + Sync + Send
+    fn par_fill<T>(&mut self, in_iter: T)
+    where T: IndexedParallelIterator<Item = Vec3>
     {
-        let reader = source.read_rgb_func;
         let writer = self.write_rgb_func;
 
-        let in_iter = source.par_iter();
-        let out_iter = self.par_iter_mut();
+        let out_iter = self.par_iter_bytes_mut();
         let iter = in_iter.zip(out_iter);
 
-        iter.for_each(|(bytes_in, bytes_out)| {
-            let input_rgb = reader(bytes_in);
-            let output_rgb = func(input_rgb);
-            writer(bytes_out, output_rgb);
+        iter.for_each(|(input_rgb, bytes_out)| {
+            writer(bytes_out, input_rgb);
         });
     }
 }
@@ -427,7 +414,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 
 fn hdr_to_sdr(in_data: &PixelBuffer, out_data: &mut PixelBuffer, options: &Options)
 {
-    out_data.map_from(in_data, |rgb| hdr_to_sdr_pixel(rgb, options));
+    out_data.par_fill(in_data.par_iter_rgb().map(|rgb| hdr_to_sdr_pixel(rgb, options)));
 }
 
 fn write_png(filename: &str, data: &PixelBuffer)
@@ -461,13 +448,8 @@ struct Histogram {
 
 impl Histogram {
     fn new(source: &PixelBuffer) -> Self {
-        let pixels = source.width * source.height;
-        let mut luma_vals: Vec<f32> = Vec::with_capacity(pixels);
-        luma_vals.resize(pixels, 0.0);
-        source.for_each(|rgb| {
-            let luma = luma_scrgb(rgb);
-            luma_vals.push(luma);
-        });
+        let mut luma_vals = Vec::<f32>::new();
+        source.par_iter_rgb().map(|rgb| luma_scrgb(rgb)).collect_into_vec(&mut luma_vals);
         luma_vals.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
         Self {
             luma_vals: luma_vals,
@@ -485,9 +467,9 @@ impl Histogram {
         let level_max = self.percentile(options.histogram_max);
         let offset = Vec3::splat(level_min);
         let scale = Vec3::splat(level_max - level_min);
-        dest.map_from(source, |rgb| {
+        dest.par_fill(source.par_iter_rgb().map(|rgb| {
             (rgb - offset) / scale
-        })
+        }))
     }
 }
 
