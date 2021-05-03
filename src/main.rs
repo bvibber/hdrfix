@@ -452,7 +452,7 @@ struct Histogram {
 impl Histogram {
     fn new(source: &PixelBuffer) -> Self {
         let mut luma_vals = Vec::<f32>::new();
-        source.par_iter_rgb().map(|rgb| luma_scrgb(rgb)).collect_into_vec(&mut luma_vals);
+        source.par_iter_rgb().map(luma_scrgb).collect_into_vec(&mut luma_vals);
         luma_vals.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
         Self {
             luma_vals: luma_vals,
