@@ -1,10 +1,9 @@
 convert() {
     cargo run --release -- \
+        --hdr-max=4000 \
         --pre-scale=0.2 \
-        --tone-map=reinhard-luma \
         --desaturation-coeff=0.96 \
         --histogram \
-        --histogram-min=0.00 \
         --histogram-max=0.99 \
         samples/"$1"-hdr.jxr \
         samples/"$1"-sdr.png
