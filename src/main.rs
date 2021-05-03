@@ -103,17 +103,13 @@ impl PixelBuffer {
         self.par_iter_bytes().map(self.read_rgb_func)
     }
 
-    fn par_fill<T>(&mut self, in_iter: T)
-    where T: IndexedParallelIterator<Item = Vec3>
+    fn map<F>(&mut self, source: &PixelBuffer, func: F)
+    where F: (Fn(Vec3) -> Vec3) + Sync + Send
     {
-        let writer = self.write_rgb_func;
-
-        let out_iter = self.par_iter_bytes_mut();
-        let iter = in_iter.zip(out_iter);
-
-        iter.for_each(|(input_rgb, bytes_out)| {
-            writer(bytes_out, input_rgb);
-        });
+        let write_rgb_func = self.write_rgb_func;
+        self.par_iter_bytes_mut()
+            .zip(source.par_iter_rgb().map(func))
+            .for_each(|(dest, rgb)| write_rgb_func(dest, rgb))
     }
 }
 
@@ -414,7 +410,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 
 fn hdr_to_sdr(in_data: &PixelBuffer, out_data: &mut PixelBuffer, options: &Options)
 {
-    out_data.par_fill(in_data.par_iter_rgb().map(|rgb| hdr_to_sdr_pixel(rgb, options)));
+    out_data.map(in_data, |rgb| hdr_to_sdr_pixel(rgb, options))
 }
 
 fn write_png(filename: &str, data: &PixelBuffer)
@@ -467,7 +463,7 @@ impl Histogram {
         let level_max = self.percentile(options.histogram_max);
         let offset = level_min;
         let scale = level_max - level_min;
-        dest.par_fill(source.par_iter_rgb().map(|rgb| {
+        dest.map(source, |rgb| {
             let luma_in = luma_scrgb(rgb);
             let luma_out = (luma_in - offset) / scale;
             // Note: these can go out of gamut, but applying
@@ -475,7 +471,7 @@ impl Histogram {
             // and it's only at the extremes. Could take it
             // or leave it.
             rgb * (luma_out / luma_in)
-        }))
+        })
     }
 }
 
