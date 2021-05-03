@@ -465,10 +465,16 @@ impl Histogram {
     fn apply_levels(&self, source: &PixelBuffer, dest: &mut PixelBuffer, options: &Options) {
         let level_min = self.percentile(options.histogram_min);
         let level_max = self.percentile(options.histogram_max);
-        let offset = Vec3::splat(level_min);
-        let scale = Vec3::splat(level_max - level_min);
+        let offset = level_min;
+        let scale = level_max - level_min;
         dest.par_fill(source.par_iter_rgb().map(|rgb| {
-            (rgb - offset) / scale
+            let luma_in = luma_scrgb(rgb);
+            let luma_out = (luma_in - offset) / scale;
+            // Note: these can go out of gamut, but applying
+            // gamut mapping just pushes them to solid white,
+            // and it's only at the extremes. Could take it
+            // or leave it.
+            rgb * (luma_out / luma_in)
         }))
     }
 }

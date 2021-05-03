@@ -19,9 +19,9 @@ exit /b %ERRORLEVEL%
 cargo run --release -- ^
     --pre-scale=0.2 ^
     --tone-map=reinhard-luma ^
-    --desaturation-coeff=0.96 ^
+    --desaturation-coeff=0.97 ^
     --histogram ^
-    --histogram-min=0.01 ^
+    --histogram-min=0.005 ^
     --histogram-max=0.99 ^
     samples\%1-hdr.jxr ^
     samples\%1-sdr.png
