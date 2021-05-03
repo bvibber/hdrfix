@@ -4,7 +4,8 @@ convert() {
         --tone-map=reinhard-luma \
         --desaturation-coeff=0.9 \
         --histogram \
-        --histogram-max=0.9875 \
+        --histogram-min=0.01 \
+        --histogram-max=0.99 \
         samples/"$1"-hdr.jxr \
         samples/"$1"-sdr.png
 }

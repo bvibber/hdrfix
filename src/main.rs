@@ -421,6 +421,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
     val = (options.tone_map)(val, &options);
     val = apply_gamma(val, options.post_gamma);
     val = val * options.post_scale;
+    val = (options.color_map)(val);
     val
 }
 
@@ -529,7 +530,12 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
 
     let width = source.width as usize;
     let height = source.height as usize;
-    let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
+    let format = if options.histogram {
+        HDRFloat32
+    } else {
+        SDR8bit
+    };
+    let mut tone_mapped = PixelBuffer::new(width, height, format);
     time_func("hdr_to_sdr", || {
         Ok(hdr_to_sdr(&source, &mut tone_mapped, &options))
     })?;
@@ -537,7 +543,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     // apply histogram expansion
     let dest = if options.histogram {
         time_func("histogram", || {
-            let mut dest = PixelBuffer::new(width, height, HDRFloat32);
+            let mut dest = PixelBuffer::new(width, height, SDR8bit);
             let histogram = Histogram::new(&tone_mapped);
             histogram.apply_levels(&tone_mapped, &mut dest, &options);
             Ok(dest)
@@ -546,14 +552,9 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         tone_mapped
     };
 
-    // And apply final color gamut mapping
-    // This is kept to end to allow the histogram stage results to be mapped
-    let mut output = PixelBuffer::new(width, height, SDR8bit);
-    output.map_from(&dest, |rgb| (options.color_map)(rgb));
-
     let output_filename = args.value_of("output").unwrap();
     time_func("write_png", || {
-        write_png(output_filename, &output)
+        write_png(output_filename, &dest)
     })?;
 
     return Ok(output_filename.to_string());

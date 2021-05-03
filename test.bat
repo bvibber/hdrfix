@@ -21,7 +21,8 @@ cargo run --release -- ^
     --tone-map=reinhard-luma ^
     --desaturation-coeff=0.9 ^
     --histogram ^
-    --histogram-max=0.9875 ^
-    samples\%1.png ^
+    --histogram-min=0.01 ^
+    --histogram-max=0.99 ^
+    samples\%1-hdr.jxr ^
     samples\%1-sdr.png
 exit /b 0
