@@ -468,7 +468,7 @@ impl Histogram {
             let luma = luma_scrgb(rgb);
             luma_vals.push(luma);
         });
-        luma_vals.sort_by(|a, b| a.partial_cmp(b).unwrap());
+        luma_vals.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
         Self {
             luma_vals: luma_vals,
         }
