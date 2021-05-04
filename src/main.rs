@@ -276,7 +276,7 @@ fn rec2100_to_scrgb(val: Vec3) -> Vec3 {
         -0.5876, 1.1329, -0.1006,
         -0.0728, -0.0083, 1.1187
     ]);
-    let scale = REC2100_MAX / 80.0;
+    let scale = REC2100_MAX / SDR_WHITE;
     matrix.mul_vec3(val * scale)
 }
 
@@ -309,7 +309,7 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     let luma_in = luma_scrgb(c_in);
-    let white = options.pre_scale * options.hdr_max / 80.0;
+    let white = options.pre_scale * options.hdr_max / SDR_WHITE;
     let white2 = white * white;
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
 
@@ -333,7 +333,7 @@ fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
     // Variant that maps R, G, and B channels separately.
     // This should desaturate very bright colors gradually, but will
     // possible cause some color shift.
-    let white = options.pre_scale * options.hdr_max / 80.0;
+    let white = options.pre_scale * options.hdr_max / SDR_WHITE;
     let white2 = white * white;
     let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
     c_out
@@ -404,6 +404,7 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 }
 
 const REC2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
+const SDR_WHITE: f32 = 80.0;
 
 fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
@@ -495,6 +496,18 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         }
     })?;
 
+    // apply histogram expansion
+    let hdr_max_val = args.value_of("hdr-max").unwrap();
+    let hdr_max = if hdr_max_val.ends_with("%") {
+        let percentile = hdr_max_val.strip_suffix("%").unwrap().parse::<f32>()? / 100.0;
+        time_func("hdr_max histogram", || {
+            let histogram = Histogram::new(&source);
+            Ok(histogram.percentile(percentile) * SDR_WHITE)
+        })?
+    } else {
+        hdr_max_val.parse::<f32>()?
+    };
+
     let options = Options {
         pre_scale: args.value_of("pre-scale").unwrap().parse::<f32>()?,
         pre_gamma: args.value_of("pre-gamma").unwrap().parse::<f32>()?,
@@ -505,7 +518,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
             "mantiuk" => tonemap_mantiuk,
             _ => unreachable!("bad tone-map option")
         },
-        hdr_max: args.value_of("hdr-max").unwrap().parse::<f32>()?,
+        hdr_max: hdr_max,
         desaturation_coeff: args.value_of("desaturation-coeff").unwrap().parse::<f32>()?,
         mantiuk_c: args.value_of("mantiuk-c").unwrap().parse::<f32>()?,
         color_map: match args.value_of("color-map").unwrap() {
