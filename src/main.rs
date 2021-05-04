@@ -18,19 +18,31 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, LocalError>;
 
+#[derive(Copy, Clone, Debug)]
+enum Level {
+    Scalar(f32),
+    Percentile(f32),
+}
+
+impl Level {
+    fn with_str(source: &str) -> Result<Self> {
+        match source.strip_suffix("%") {
+            Some(val) => Ok(Self::Percentile(val.parse()?)),
+            None => Ok(Self::Scalar(source.parse()?)),
+        }
+    }
+}
+
 struct Options {
-    pre_scale: f32,
-    pre_gamma: f32,
+    sdr_white: f32,
     hdr_max: f32,
     desaturation_coeff: f32,
     mantiuk_c: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
-    post_gamma: f32,
-    post_scale: f32,
+    gamma: f32,
+    levels_min: Level,
+    levels_max: Level,
     color_map: fn(Vec3) -> Vec3,
-    histogram: bool,
-    histogram_min: f32,
-    histogram_max: f32,
 }
 
 enum PixelFormat {
@@ -309,7 +321,7 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     let luma_in = luma_scrgb(c_in);
-    let white = options.pre_scale * options.hdr_max / SDR_WHITE;
+    let white = options.hdr_max / options.sdr_white;
     let white2 = white * white;
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
 
@@ -333,7 +345,7 @@ fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
     // Variant that maps R, G, and B channels separately.
     // This should desaturate very bright colors gradually, but will
     // possible cause some color shift.
-    let white = options.pre_scale * options.hdr_max / SDR_WHITE;
+    let white = options.hdr_max / options.sdr_white;
     let white2 = white * white;
     let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
     c_out
@@ -409,11 +421,9 @@ const SDR_WHITE: f32 = 80.0;
 fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
     let mut val = rgb_scrgb;
-    val = val * options.pre_scale;
-    val = apply_gamma(val, options.pre_gamma);
+    val = val * SDR_WHITE / options.sdr_white;
     val = (options.tone_map)(val, &options);
-    val = apply_gamma(val, options.post_gamma);
-    val = val * options.post_scale;
+    val = apply_gamma(val, options.gamma);
     val = (options.color_map)(val);
     val
 }
@@ -462,26 +472,55 @@ impl Histogram {
         }
     }
 
-    fn percentile(&self, target: f32) -> f32{
+    fn percentile(&self, target: f32) -> f32 {
         let max_index = self.luma_vals.len() - 1;
-        let target_index = (max_index as f32 * target) as usize;
+        let target_index = (max_index as f32 * target / 100.0) as usize;
         self.luma_vals[target_index]
     }
+}
 
-    fn apply_levels(&self, source: &PixelBuffer, dest: &mut PixelBuffer, options: &Options) {
-        let level_min = self.percentile(options.histogram_min);
-        let level_max = self.percentile(options.histogram_max);
-        let offset = level_min;
-        let scale = level_max - level_min;
-        dest.fill(source.map(|rgb| {
-            let luma_in = luma_scrgb(rgb);
-            let luma_out = (luma_in - offset) / scale;
-            // Note: these can go out of gamut, but applying
-            // gamut mapping just pushes them to solid white,
-            // and it's only at the extremes. Could take it
-            // or leave it.
-            rgb * (luma_out / luma_in)
-        }))
+fn apply_levels(source: &PixelBuffer, dest: &mut PixelBuffer, level_min: f32, level_max: f32) {
+    let offset = level_min;
+    let scale = level_max - level_min;
+    dest.fill(source.map(|rgb| {
+        let luma_in = luma_scrgb(rgb);
+        let luma_out = (luma_in - offset) / scale;
+        // Note: these can go out of gamut, but applying
+        // gamut mapping just pushes them to solid white,
+        // and it's only at the extremes. Could take it
+        // or leave it.
+        rgb * (luma_out / luma_in)
+    }))
+}
+
+struct Lazy<T, F> where F: (FnOnce() -> T) {
+    value: Option<T>,
+    func: Option<F>,
+}
+
+impl<T,F> Lazy<T,F> where F: (FnOnce() -> T) {
+    fn new(func: F) -> Self {
+        Lazy {
+            value: None,
+            func: Some(func)
+        }
+    }
+
+    fn force(&mut self) -> &T {
+        if self.value.is_none() {
+            let func = self.func.take().unwrap();
+            self.value = Some(func());
+        }
+        self.value.as_ref().unwrap()
+    }
+}
+
+impl<F> Lazy<Histogram,F> where F: (FnOnce() -> Histogram) {
+    fn level(&mut self, level: Level) -> f32 {
+        match level {
+            Level::Scalar(val) => val,
+            Level::Percentile(val) => self.force().percentile(val),
+        }
     }
 }
 
@@ -496,21 +535,16 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         }
     })?;
 
-    // apply histogram expansion
-    let hdr_max_val = args.value_of("hdr-max").unwrap();
-    let hdr_max = if hdr_max_val.ends_with("%") {
-        let percentile = hdr_max_val.strip_suffix("%").unwrap().parse::<f32>()? / 100.0;
-        time_func("hdr_max histogram", || {
-            let histogram = Histogram::new(&source);
-            Ok(histogram.percentile(percentile) * SDR_WHITE)
-        })?
-    } else {
-        hdr_max_val.parse::<f32>()?
-    };
+    // If given a percentile for hdr_max, detect from input histogram.
+    let mut lazy_histogram = Lazy::new(|| {
+        time_func("input histogram", || Ok(Histogram::new(&source))).unwrap()
+    });
+    let hdr_max_opt = Level::with_str(args.value_of("hdr-max").unwrap())?;
+    let hdr_max = lazy_histogram.level(hdr_max_opt);
 
     let options = Options {
-        pre_scale: args.value_of("pre-scale").unwrap().parse::<f32>()?,
-        pre_gamma: args.value_of("pre-gamma").unwrap().parse::<f32>()?,
+        sdr_white: args.value_of("sdr-white").unwrap().parse::<f32>()?,
+        hdr_max: hdr_max,
         tone_map: match args.value_of("tone-map").unwrap() {
             "linear" => tonemap_linear,
             "reinhard-luma" => tonemap_reinhard_luma,
@@ -518,7 +552,6 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
             "mantiuk" => tonemap_mantiuk,
             _ => unreachable!("bad tone-map option")
         },
-        hdr_max: hdr_max,
         desaturation_coeff: args.value_of("desaturation-coeff").unwrap().parse::<f32>()?,
         mantiuk_c: args.value_of("mantiuk-c").unwrap().parse::<f32>()?,
         color_map: match args.value_of("color-map").unwrap() {
@@ -527,36 +560,27 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
             "desaturate" => color_desaturate,
             _ => unreachable!("bad color-map option")
         },
-        post_gamma: args.value_of("post-gamma").unwrap().parse::<f32>()?,
-        post_scale: args.value_of("post-scale").unwrap().parse::<f32>()?,
-        histogram: args.is_present("histogram"),
-        histogram_min: args.value_of("histogram-min").unwrap().parse::<f32>()?,
-        histogram_max: args.value_of("histogram-max").unwrap().parse::<f32>()?,
+        gamma: args.value_of("gamma").unwrap().parse::<f32>()?,
+        levels_min: Level::with_str(args.value_of("levels-min").unwrap())?,
+        levels_max: Level::with_str(args.value_of("levels-max").unwrap())?,
     };
 
     let width = source.width as usize;
     let height = source.height as usize;
-    let format = if options.histogram {
-        HDRFloat32
-    } else {
-        SDR8bit
-    };
-    let mut tone_mapped = PixelBuffer::new(width, height, format);
+    let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
     time_func("hdr_to_sdr", || {
         Ok(hdr_to_sdr(&source, &mut tone_mapped, &options))
     })?;
 
     // apply histogram expansion
-    let dest = if options.histogram {
-        time_func("histogram", || {
-            let mut dest = PixelBuffer::new(width, height, SDR8bit);
-            let histogram = Histogram::new(&tone_mapped);
-            histogram.apply_levels(&tone_mapped, &mut dest, &options);
-            Ok(dest)
-        })?
-    } else {
-        tone_mapped
-    };
+    let mut lazy_histogram = Lazy::new(|| {
+        time_func("levels histogram", || Ok(Histogram::new(&tone_mapped))).unwrap()
+    });
+    let levels_min = lazy_histogram.level(options.levels_min);
+    let levels_max = lazy_histogram.level(options.levels_max);
+
+    let mut dest = PixelBuffer::new(width, height, SDR8bit);
+    apply_levels(&tone_mapped, &mut dest, levels_min, levels_max);
 
     let output_filename = args.value_of("output").unwrap();
     time_func("write_png", || {
@@ -571,20 +595,16 @@ fn main() {
         .version("0.1.0")
         .author("Brion Vibber <brion@pobox.com>")
         .arg(Arg::with_name("input")
-            .help("Input filename, must be .png as saved by Nvidia capture overlay.")
+            .help("Input filename, must be .jxr or .png as saved by NVIDIA capture overlay.")
             .required(true)
             .index(1))
         .arg(Arg::with_name("output")
             .help("Output filename, must be .png.")
             .required(true)
             .index(2))
-        .arg(Arg::with_name("pre-scale")
-            .help("Multiplicative scaling on linear input.")
-            .long("pre-scale")
-            .default_value("1.0"))
-        .arg(Arg::with_name("pre-gamma")
-            .help("Gamma power to apply on linear input, after scaling.")
-            .long("pre-gamma")
+        .arg(Arg::with_name("sdr-white")
+            .help("SDR white point in nits, used to scale the HDR input linearly so that input value of standard 80 nits is scaled up to this value. Defaults to 80 nits, which is standard SDR calibration for a darkened room.")
+            .long("sdr-white")
             .default_value("1.0"))
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
@@ -603,26 +623,17 @@ fn main() {
             .help("The 'c' contrast compression factor for Mantiuk tone-mapping.")
             .long("mantiuk-c")
             .default_value("1.0"))
-        .arg(Arg::with_name("post-gamma")
-            .help("Gamma curve to apply on tone-mapped luminance values.")
-            .long("post-gamma")
+        .arg(Arg::with_name("gamma")
+            .help("Gamma curve to apply on luminance values after tone mapping.")
+            .long("gamma")
             .default_value("1.0"))
-        .arg(Arg::with_name("post-scale")
-            .help("Multiplicative scaling on linear output.")
-            .long("post-scale")
-            .default_value("1.0"))
-        .arg(Arg::with_name("histogram")
-            .help("Expand the final output contrast based on a histogram. \
-            Use --histogram-min and --histogram-max to set luminance percentiles \
-            (in 0..1 space) to expand from.")
-            .long("histogram"))
-        .arg(Arg::with_name("histogram-min")
-            .help("Minimum portion of histogram levels to retain in output.")
-            .long("histogram-min")
+        .arg(Arg::with_name("levels-min")
+            .help("Minimum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
+            .long("levels-min")
             .default_value("0.0"))
-        .arg(Arg::with_name("histogram-max")
-            .help("Maximum portion of histogram levels to retain in output.")
-            .long("histogram-max")
+        .arg(Arg::with_name("levels-max")
+            .help("Maximum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
+            .long("levels-max")
             .default_value("1.0"))
         .arg(Arg::with_name("color-map")
             .help("Method for mapping and fixing out of gamut colors.")

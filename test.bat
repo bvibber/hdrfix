@@ -19,10 +19,9 @@ exit /b %ERRORLEVEL%
 :convert
 cargo run --release -- ^
     --hdr-max=4000 ^
-    --pre-scale=0.2 ^
+    --sdr-white=400 ^
     --desaturation-coeff=0.96 ^
-    --histogram ^
-    --histogram-max=0.99 ^
+    --levels-max=99%% ^
     samples\%1-hdr.jxr ^
     samples\%1-sdr.png
 exit /b 0
