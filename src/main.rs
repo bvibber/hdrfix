@@ -605,7 +605,7 @@ fn main() {
         .arg(Arg::with_name("sdr-white")
             .help("SDR white point in nits, used to scale the HDR input linearly so that input value of standard 80 nits is scaled up to this value. Defaults to 80 nits, which is standard SDR calibration for a darkened room.")
             .long("sdr-white")
-            .default_value("1.0"))
+            .default_value("80.0"))
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
