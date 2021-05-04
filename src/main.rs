@@ -285,7 +285,9 @@ const KG: f32 = 0.7152;
 const KB: f32 = 0.0722;
 
 fn luma_scrgb(val: Vec3) -> f32 {
-    val.x * KR + val.y * KG + val.z * KB
+    let k = Vec3::new(KR, KG, KB);
+    let scaled = val * k;
+    scaled.x + scaled.y + scaled.z
 }
 
 fn apply_gamma(input: Vec3, gamma: f32) -> Vec3 {
