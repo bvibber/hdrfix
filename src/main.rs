@@ -540,7 +540,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         time_func("input histogram", || Ok(Histogram::new(&source))).unwrap()
     });
     let hdr_max_opt = Level::with_str(args.value_of("hdr-max").unwrap())?;
-    let hdr_max = lazy_histogram.level(hdr_max_opt);
+    let hdr_max = lazy_histogram.level(hdr_max_opt) * SDR_WHITE;
 
     let options = Options {
         sdr_white: args.value_of("sdr-white").unwrap().parse::<f32>()?,
