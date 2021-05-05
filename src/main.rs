@@ -28,7 +28,7 @@ impl Level {
     fn with_str(source: &str) -> Result<Self> {
         match source.strip_suffix("%") {
             Some(val) => Ok(Self::Percentile(val.parse()?)),
-            None => Ok(Self::Scalar(source.parse()?)),
+            None => Ok(Self::Scalar(source.parse::<f32>()?)),
         }
     }
 }
@@ -321,7 +321,7 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     let luma_in = luma_scrgb(c_in);
-    let white = options.hdr_max / options.sdr_white;
+    let white = options.hdr_max;
     let white2 = white * white;
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
 
@@ -345,7 +345,7 @@ fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
     // Variant that maps R, G, and B channels separately.
     // This should desaturate very bright colors gradually, but will
     // possible cause some color shift.
-    let white = options.hdr_max / options.sdr_white;
+    let white = options.hdr_max;
     let white2 = white * white;
     let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
     c_out
@@ -356,7 +356,7 @@ fn tonemap_mantiuk(c_in: Vec3, options: &Options) -> Vec3 {
 
     // Equation 4: tone-mapping
     let c = options.mantiuk_c;
-    let b = 1.0 / (options.hdr_max / 80.0);
+    let b = 1.0 / options.hdr_max;
     let l_in = luma_scrgb(c_in);
     let l_out = (l_in * b).powf(c);
 
@@ -388,22 +388,17 @@ fn color_darken(input: Vec3) -> Vec3
 fn color_desaturate(c_in: Vec3) -> Vec3
 {
     // algorithm of my own devise
-    // only for colors out of gamut, desaturate until it matches luminance,
-    // or clip anything with luminance out of bounds to white
-    let luma_in = luma_scrgb(c_in);
-    if luma_in > 1.0 {
-        Vec3::ONE
+    // only for colors out of gamut, desaturate until it matches luminance
+    let max = c_in.max_element();
+    if max > 1.0 {
+        let luma_in = luma_scrgb(c_in);
+        let white = Vec3::splat(luma_in);
+        let diff = c_in - white;
+        let ratio = (max - 1.0) / max;
+        let desaturated = c_in - diff * ratio;
+        clip(desaturated)
     } else {
-        let max = c_in.max_element();
-        if max > 1.0 {
-            let white = Vec3::splat(luma_in);
-            let diff = c_in - white;
-            let ratio = (max - 1.0) / max;
-            let desaturated = c_in - diff * ratio;
-            clip(desaturated)
-        } else {
-            c_in
-        }
+        c_in
     }
 }
 
@@ -424,13 +419,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
     val = val * SDR_WHITE / options.sdr_white;
     val = (options.tone_map)(val, &options);
     val = apply_gamma(val, options.gamma);
-    val = (options.color_map)(val);
     val
-}
-
-fn hdr_to_sdr(in_data: &PixelBuffer, out_data: &mut PixelBuffer, options: &Options)
-{
-    out_data.fill(in_data.map(|rgb| hdr_to_sdr_pixel(rgb, options)))
 }
 
 fn write_png(filename: &str, data: &PixelBuffer)
@@ -466,7 +455,12 @@ impl Histogram {
     fn new(source: &PixelBuffer) -> Self {
         let mut luma_vals = Vec::<f32>::new();
         source.par_iter_rgb().map(luma_scrgb).collect_into_vec(&mut luma_vals);
-        luma_vals.par_sort_unstable_by(|a, b| a.partial_cmp(b).unwrap());
+        luma_vals.par_sort_unstable_by(|a, b| {
+            match a.partial_cmp(b) {
+                Some(ordering) => ordering,
+                None => std::cmp::Ordering::Equal,
+            }
+        });
         Self {
             luma_vals: luma_vals,
         }
@@ -479,18 +473,12 @@ impl Histogram {
     }
 }
 
-fn apply_levels(source: &PixelBuffer, dest: &mut PixelBuffer, level_min: f32, level_max: f32) {
+fn apply_levels(rgb: Vec3, level_min: f32, level_max: f32) -> Vec3 {
     let offset = level_min;
     let scale = level_max - level_min;
-    dest.fill(source.map(|rgb| {
-        let luma_in = luma_scrgb(rgb);
-        let luma_out = (luma_in - offset) / scale;
-        // Note: these can go out of gamut, but applying
-        // gamut mapping just pushes them to solid white,
-        // and it's only at the extremes. Could take it
-        // or leave it.
-        rgb * (luma_out / luma_in)
-    }))
+    let luma_in = luma_scrgb(rgb);
+    let luma_out = (luma_in - offset) / scale;
+    rgb * (luma_out / luma_in)
 }
 
 struct Lazy<T, F> where F: (FnOnce() -> T) {
@@ -535,44 +523,52 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         }
     })?;
 
-    // If given a percentile for hdr_max, detect from input histogram.
-    let mut lazy_histogram = Lazy::new(|| {
-        time_func("input histogram", || Ok(Histogram::new(&source))).unwrap()
-    });
-    let hdr_max_opt = Level::with_str(args.value_of("hdr-max").unwrap())?;
-    let hdr_max = lazy_histogram.level(hdr_max_opt) * SDR_WHITE;
+    let sdr_white = args.value_of("sdr-white").unwrap().parse::<f32>()?;
+
+    let hdr_max = match Level::with_str(args.value_of("hdr-max").unwrap())? {
+        // hdr_max is in nits if scalar, so scale it back to scrgb
+        Level::Scalar(val) => val / sdr_white,
+
+        // If given a percentile for hdr_max, detect from input histogram.
+        Level::Percentile(val) => {
+            let histogram = time_func("input histogram", || {
+                Ok(Histogram::new(&source))
+            }).unwrap();
+            histogram.percentile(val)
+        }
+    };
 
     let options = Options {
-        sdr_white: args.value_of("sdr-white").unwrap().parse::<f32>()?,
+        sdr_white: sdr_white,
         hdr_max: hdr_max,
-        tone_map: match args.value_of("tone-map").unwrap() {
+        tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
             "reinhard-luma" => tonemap_reinhard_luma,
             "reinhard-rgb" => tonemap_reinhard_rgb,
             "mantiuk" => tonemap_mantiuk,
             _ => unreachable!("bad tone-map option")
         },
-        desaturation_coeff: args.value_of("desaturation-coeff").unwrap().parse::<f32>()?,
-        mantiuk_c: args.value_of("mantiuk-c").unwrap().parse::<f32>()?,
-        color_map: match args.value_of("color-map").unwrap() {
+        desaturation_coeff: args.value_of("desaturation-coeff").expect("desat coeff arg").parse::<f32>()?,
+        mantiuk_c: args.value_of("mantiuk-c").expect("mantiuk-c arg").parse::<f32>()?,
+        color_map: match args.value_of("color-map").expect("color-map arg") {
             "clip" => color_clip,
             "darken" => color_darken,
             "desaturate" => color_desaturate,
             _ => unreachable!("bad color-map option")
         },
-        gamma: args.value_of("gamma").unwrap().parse::<f32>()?,
-        levels_min: Level::with_str(args.value_of("levels-min").unwrap())?,
-        levels_max: Level::with_str(args.value_of("levels-max").unwrap())?,
+        gamma: args.value_of("gamma").expect("gamma arg").parse::<f32>()?,
+        levels_min: Level::with_str(args.value_of("levels-min").expect("levels-min arg"))?,
+        levels_max: Level::with_str(args.value_of("levels-max").expect("levels-max arg"))?,
     };
 
     let width = source.width as usize;
     let height = source.height as usize;
     let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
     time_func("hdr_to_sdr", || {
-        Ok(hdr_to_sdr(&source, &mut tone_mapped, &options))
+        Ok(tone_mapped.fill(source.map(|rgb| hdr_to_sdr_pixel(rgb, &options))))
     })?;
 
-    // apply histogram expansion
+    // apply histogram expansion and color gamut correction to output
     let mut lazy_histogram = Lazy::new(|| {
         time_func("levels histogram", || Ok(Histogram::new(&tone_mapped))).unwrap()
     });
@@ -580,7 +576,11 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     let levels_max = lazy_histogram.level(options.levels_max);
 
     let mut dest = PixelBuffer::new(width, height, SDR8bit);
-    apply_levels(&tone_mapped, &mut dest, levels_min, levels_max);
+    time_func("output mapping", || {
+        Ok(dest.fill(tone_mapped.map(|rgb| {
+            clip((options.color_map)(apply_levels(rgb, levels_min, levels_max)))
+        })))
+    })?;
 
     let output_filename = args.value_of("output").unwrap();
     time_func("write_png", || {
