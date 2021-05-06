@@ -402,6 +402,44 @@ fn color_desaturate(c_in: Vec3) -> Vec3
     }
 }
 
+use oklab::{Oklab, linear_srgb_to_oklab, oklab_to_linear_srgb};
+
+fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
+{
+    let c_out = Oklab {
+        l: c_in.l,
+        a: c_in.a * saturation,
+        b: c_in.b * saturation,
+    };
+    let rgb = oklab_to_linear_srgb(c_out);
+    Vec3::new(rgb.r, rgb.g, rgb.b)
+}
+
+fn color_oklab(c_in: Vec3) -> Vec3
+{
+    let max = c_in.max_element();
+    if max > 1.0 {
+        let mut saturation = 1.0;
+        let delta = 0.01;
+        let c_out = loop {
+            let c_in_rgb = oklab::RGB::new(c_in.x, c_in.y, c_in.z);
+            let c_in_oklab = linear_srgb_to_oklab(c_in_rgb);
+            let c_out = desat_oklab(c_in_oklab, saturation);
+            if c_out.max_element() <= 1.0 {
+                break c_out;
+            }
+            saturation -= delta;
+            if saturation < 0.0 {
+                // can't desaturate any more, give up
+                break c_out;
+            }
+        };
+        clip(c_out)
+    } else {
+        c_in
+    }
+}
+
 fn linear_to_srgb(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
     let min = Vec3::splat(0.0031308);
@@ -554,6 +592,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
             "clip" => color_clip,
             "darken" => color_darken,
             "desaturate" => color_desaturate,
+            "oklab" => color_oklab,
             _ => unreachable!("bad color-map option")
         },
         gamma: args.value_of("gamma").expect("gamma arg").parse::<f32>()?,
@@ -638,7 +677,7 @@ fn main() {
         .arg(Arg::with_name("color-map")
             .help("Method for mapping and fixing out of gamut colors.")
             .long("color-map")
-            .possible_values(&["clip", "darken", "desaturate"])
+            .possible_values(&["clip", "darken", "desaturate", "oklab"])
             .default_value("desaturate"))
         .get_matches();
 
