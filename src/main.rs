@@ -1,7 +1,8 @@
+use std::cmp::Ordering;
 use std::fs::File;
-use std::path::Path;
 use std::io;
 use std::num;
+use std::path::Path;
 
 // Math bits
 use glam::f32::{Mat3, Vec3};
@@ -378,26 +379,45 @@ fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
     oklab_to_scrgb(c_out)
 }
 
+const EPSILON: f32 = 0.001; // good enough for us for now
+
+fn close_enough(a: f32, b: f32) -> Ordering {
+    let delta = a - b;
+    if delta.abs() < EPSILON {
+        Ordering::Equal
+    } else if delta < 0.0 {
+        Ordering::Less
+    } else {
+        Ordering::Greater
+    }
+}
+
+fn binary_search<I, O, F, G>(input: I, min: f32, max: f32, func: F, comparator: G) -> O
+where I: Copy + Clone,
+    O: Copy + Clone,
+    F: Fn(I, f32) -> O,
+    G: Fn(O) -> Ordering
+{
+    let mid = (min + max) / 2.0;
+    let result = func(input, mid);
+    match close_enough(min, max) {
+        Ordering::Equal => result,
+        _ => match comparator(result) {
+            Ordering::Less => binary_search(input, mid, max, func, comparator),
+            Ordering::Greater => binary_search(input, min, mid, func, comparator),
+            Ordering::Equal => result,
+        }
+    }
+}
+
 fn color_desat_oklab(c_in: Vec3) -> Vec3
 {
     let max = c_in.max_element();
     if max > 1.0 {
-        // This loop is very inefficient
-        // If it can't be calculated, switch to a binary search at least
         let c_in_oklab = scrgb_to_oklab(c_in);
-        let mut saturation = 1.0;
-        let delta = 0.01;
-        let c_out = loop {
-            let c_out = desat_oklab(c_in_oklab, saturation);
-            if c_out.max_element() <= 1.0 {
-                break c_out;
-            }
-            saturation -= delta;
-            if saturation < 0.0 {
-                // can't desaturate any more, give up
-                break c_out;
-            }
-        };
+        let c_out = binary_search(c_in_oklab, 0.0, 1.0, desat_oklab, |rgb| {
+            close_enough(rgb.max_element(), 1.0)
+        });
         clip(c_out)
     } else {
         c_in
@@ -460,7 +480,7 @@ impl Histogram {
         luma_vals.par_sort_unstable_by(|a, b| {
             match a.partial_cmp(b) {
                 Some(ordering) => ordering,
-                None => std::cmp::Ordering::Equal,
+                None => Ordering::Equal,
             }
         });
         Self {
