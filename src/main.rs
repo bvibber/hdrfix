@@ -314,6 +314,16 @@ fn tonemap_linear(c_in: Vec3, _options: &Options) -> Vec3 {
     c_in
 }
 
+fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
+    // Variant that maps R, G, and B channels separately.
+    // This should desaturate very bright colors gradually, but will
+    // possible cause some color shift.
+    let white = options.hdr_max;
+    let white2 = white * white;
+    let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
+    c_out
+}
+
 fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
     // Map luminance from HDR to SDR domain, and scale the input color
     // in oklab perceptual color space.
@@ -371,6 +381,16 @@ fn color_clip(input: Vec3) -> Vec3
     clip(input)
 }
 
+fn darken_oklab(c_in: Oklab, brightness: f32) -> Vec3
+{
+    let c_out = Oklab {
+        l: c_in.l * brightness,
+        a: c_in.a * brightness,
+        b: c_in.b * brightness,
+    };
+    oklab_to_scrgb(c_out)
+}
+
 fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
 {
     let c_out = Oklab {
@@ -409,6 +429,20 @@ where I: Copy + Clone,
             Ordering::Greater => binary_search(input, min, mid, func, comparator),
             Ordering::Equal => result,
         }
+    }
+}
+
+fn color_darken_oklab(c_in: Vec3) -> Vec3
+{
+    let max = c_in.max_element();
+    if max > 1.0 {
+        let c_in_oklab = scrgb_to_oklab(c_in);
+        let c_out = binary_search(c_in_oklab, 0.0, 1.0, darken_oklab, |rgb| {
+            close_enough(rgb.max_element(), 1.0)
+        });
+        clip(c_out)
+    } else {
+        c_in
     }
 }
 
@@ -606,10 +640,12 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
             "reinhard" => tonemap_reinhard_oklab,
+            "reinhard-rgb" => tonemap_reinhard_rgb,
             _ => unreachable!("bad tone-map option")
         },
         color_map: match args.value_of("color-map").expect("color-map arg") {
             "clip" => color_clip,
+            "darken" => color_darken_oklab,
             "desaturate" => color_desat_oklab,
             _ => unreachable!("bad color-map option")
         },
@@ -661,11 +697,11 @@ fn main() {
         .arg(Arg::with_name("sdr-white")
             .help("SDR white point in nits, used to scale the HDR input linearly so that input value of standard 80 nits is scaled up to this value. Defaults to 80 nits, which is standard SDR calibration for a darkened room.")
             .long("sdr-white")
-            .default_value("80.0"))
+            .default_value("80"))
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard"])
+            .possible_values(&["linear", "reinhard", "reinhard-rgb"])
             .default_value("reinhard"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level for Reinhard algorithm, in nits.")
@@ -682,7 +718,7 @@ fn main() {
         .arg(Arg::with_name("color-map")
             .help("Method for mapping and fixing out of gamut colors.")
             .long("color-map")
-            .possible_values(&["clip", "desaturate"])
+            .possible_values(&["clip", "darken", "desaturate"])
             .default_value("desaturate"))
         .arg(Arg::with_name("pre-gamma")
             .help("Gamma power applied on input.")
