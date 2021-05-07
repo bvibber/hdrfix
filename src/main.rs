@@ -18,6 +18,9 @@ use thiserror::Error;
 
 type Result<T> = std::result::Result<T, LocalError>;
 
+// Color fun
+use oklab::{Oklab, linear_srgb_to_oklab, oklab_to_linear_srgb};
+
 #[derive(Copy, Clone, Debug)]
 enum Level {
     Scalar(f32),
@@ -302,6 +305,20 @@ fn luma_scrgb(val: Vec3) -> f32 {
     scaled.x + scaled.y + scaled.z
 }
 
+fn luma_oklab(val: Vec3) -> f32 {
+    let oklab_in = scrgb_to_oklab(val);
+    // oklab's l is not linear
+    // so translate it back to linear srgb desaturated
+    // and take one of its rgb values
+    let oklab_gray = Oklab {
+        l: oklab_in.l,
+        a: 0.0,
+        b: 0.0,
+    };
+    let rgb_gray = oklab_to_scrgb(oklab_gray);
+    rgb_gray.x
+}
+
 fn apply_gamma(input: Vec3, gamma: f32) -> Vec3 {
     input.powf(gamma)
 }
@@ -320,9 +337,10 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
     // https://64.github.io/tonemapping/#reinhard
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
-    let luma_in = luma_scrgb(c_in);
     let white = options.hdr_max;
     let white2 = white * white;
+    let luma_orig = luma_scrgb(c_in);
+    let luma_in = luma_orig.min(white);
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
 
     // simple version, no desaturation correction
@@ -336,9 +354,58 @@ fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
     // correcting version based on equation 3 from Mantiuk 2009
     let s = options.desaturation_coeff;
     // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
-    let c_out = (((c_in / luma_in) - Vec3::ONE) * s + Vec3::ONE) * luma_out;
+    let c_out = (((c_in / luma_orig) - Vec3::ONE) * s + Vec3::ONE) * luma_out;
 
     c_out
+}
+
+fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
+    // Map luminance from HDR to SDR domain, and scale the input color
+    // in oklab perceptual color space.
+    //
+    // oklab color space: https://bottosson.github.io/posts/oklab/
+    //
+    let white = options.hdr_max;
+    let white2 = white * white;
+
+    // use Oklab's L coordinate as luminance
+    let luma_in = luma_oklab(c_in);
+
+    // Reinhard tone-mapping algo.
+    //
+    // Original:
+    // http://www.cmap.polytechnique.fr/%7Epeyre/cours/x2005signal/hdr_photographic.pdf
+    //
+    // Extended:
+    // https://64.github.io/tonemapping/#reinhard
+    // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
+    //
+    let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
+    scale_oklab(c_in, luma_out)
+}
+
+fn oklab_l_for_luma(luma: f32) -> f32 {
+    let gray_rgb = oklab::RGB::new(luma, luma, luma);
+    let gray_oklab = linear_srgb_to_oklab(gray_rgb);
+    gray_oklab.l
+}
+
+fn scale_oklab(c_in: Vec3, luma_out: f32) -> Vec3
+{
+    let gray_l = oklab_l_for_luma(luma_out);
+
+    let oklab_in = scrgb_to_oklab(c_in);
+    if oklab_in.l == 0.0 {
+        c_in
+    } else {
+        let ratio = gray_l / oklab_in.l;
+        let oklab_out = Oklab {
+            l: gray_l,
+            a: oklab_in.a * ratio,
+            b: oklab_in.b * ratio,
+        };
+        oklab_to_scrgb(oklab_out)
+    }
 }
 
 fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
@@ -402,8 +469,6 @@ fn color_desaturate(c_in: Vec3) -> Vec3
     }
 }
 
-use oklab::{Oklab, linear_srgb_to_oklab, oklab_to_linear_srgb};
-
 fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
 {
     let c_out = Oklab {
@@ -411,19 +476,19 @@ fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
         a: c_in.a * saturation,
         b: c_in.b * saturation,
     };
-    let rgb = oklab_to_linear_srgb(c_out);
-    Vec3::new(rgb.r, rgb.g, rgb.b)
+    oklab_to_scrgb(c_out)
 }
 
 fn color_oklab(c_in: Vec3) -> Vec3
 {
     let max = c_in.max_element();
     if max > 1.0 {
+        // This loop is very inefficient
+        // If it can't be calculated, switch to a binary search at least
+        let c_in_oklab = scrgb_to_oklab(c_in);
         let mut saturation = 1.0;
         let delta = 0.01;
         let c_out = loop {
-            let c_in_rgb = oklab::RGB::new(c_in.x, c_in.y, c_in.z);
-            let c_in_oklab = linear_srgb_to_oklab(c_in_rgb);
             let c_out = desat_oklab(c_in_oklab, saturation);
             if c_out.max_element() <= 1.0 {
                 break c_out;
@@ -457,6 +522,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
     val = val * SDR_WHITE / options.sdr_white;
     val = (options.tone_map)(val, &options);
     val = apply_gamma(val, options.gamma);
+    val = (options.color_map)(val);
     val
 }
 
@@ -492,7 +558,7 @@ struct Histogram {
 impl Histogram {
     fn new(source: &PixelBuffer) -> Self {
         let mut luma_vals = Vec::<f32>::new();
-        source.par_iter_rgb().map(luma_scrgb).collect_into_vec(&mut luma_vals);
+        source.par_iter_rgb().map(luma_oklab).collect_into_vec(&mut luma_vals);
         luma_vals.par_sort_unstable_by(|a, b| {
             match a.partial_cmp(b) {
                 Some(ordering) => ordering,
@@ -511,12 +577,35 @@ impl Histogram {
     }
 }
 
-fn apply_levels(rgb: Vec3, level_min: f32, level_max: f32) -> Vec3 {
+fn scrgb_to_linear_srgb(c: Vec3) -> oklab::RGB<f32> {
+    oklab::RGB::new(c.x, c.y, c.z)
+}
+
+fn linear_srgb_to_scrgb(c: oklab::RGB<f32>) -> Vec3 {
+    Vec3::new(c.r, c.g, c.b)
+}
+
+fn scrgb_to_oklab(c: Vec3) -> Oklab {
+    linear_srgb_to_oklab(scrgb_to_linear_srgb(c))
+}
+
+fn oklab_to_scrgb(c: Oklab) -> Vec3 {
+    linear_srgb_to_scrgb(oklab_to_linear_srgb(c))
+}
+
+fn apply_levels(c_in: Vec3, level_min: f32, level_max: f32) -> Vec3 {
+    /*
     let offset = level_min;
     let scale = level_max - level_min;
     let luma_in = luma_scrgb(rgb);
     let luma_out = (luma_in - offset) / scale;
     rgb * (luma_out / luma_in)
+    */
+    let offset = level_min;
+    let scale = level_max - level_min;
+    let luma_in = luma_oklab(c_in);
+    let luma_out = (luma_in - offset) / scale;
+    scale_oklab(c_in, luma_out)
 }
 
 struct Lazy<T, F> where F: (FnOnce() -> T) {
@@ -582,6 +671,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
             "reinhard-luma" => tonemap_reinhard_luma,
+            "reinhard-oklab" => tonemap_reinhard_oklab,
             "reinhard-rgb" => tonemap_reinhard_rgb,
             "mantiuk" => tonemap_mantiuk,
             _ => unreachable!("bad tone-map option")
@@ -617,6 +707,8 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     let mut dest = PixelBuffer::new(width, height, SDR8bit);
     time_func("output mapping", || {
         Ok(dest.fill(tone_mapped.map(|rgb| {
+            // We have to color map again
+            // in case the histogram pushed things back out of gamut.
             clip((options.color_map)(apply_levels(rgb, levels_min, levels_max)))
         })))
     })?;
@@ -648,7 +740,7 @@ fn main() {
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard-luma", "reinhard-rgb", "mantiuk"])
+            .possible_values(&["linear", "reinhard-luma", "reinhard-oklab", "reinhard-rgb", "mantiuk"])
             .default_value("reinhard-luma"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level for Reinhard and Mantiuk algorithms, in nits.")
