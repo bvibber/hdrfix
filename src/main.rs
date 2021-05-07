@@ -349,11 +349,10 @@ fn oklab_l_for_luma(luma: f32) -> f32 {
 
 fn scale_oklab(oklab_in: Oklab, luma_out: f32) -> Oklab
 {
-    let gray_l = oklab_l_for_luma(luma_out);
-
     if oklab_in.l == 0.0 {
         oklab_in
     } else {
+        let gray_l = oklab_l_for_luma(luma_out);
         let ratio = gray_l / oklab_in.l;
         Oklab {
             l: gray_l,
