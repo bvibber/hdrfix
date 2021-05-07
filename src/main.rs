@@ -293,13 +293,16 @@ fn rec2100_to_scrgb(val: Vec3) -> Vec3 {
     matrix.mul_vec3(val * scale)
 }
 
-fn luma_oklab(val: Vec3) -> f32 {
-    let oklab_in = scrgb_to_oklab(val);
+fn luma_scrgb(val: Vec3) -> f32 {
+    luma_oklab(scrgb_to_oklab(val))
+}
+
+fn luma_oklab(val: Oklab) -> f32 {
     // oklab's l is not linear
     // so translate it back to linear srgb desaturated
     // and take one of its rgb values
     let oklab_gray = Oklab {
-        l: oklab_in.l,
+        l: val.l,
         a: 0.0,
         b: 0.0,
     };
@@ -321,7 +324,8 @@ fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
     let white2 = white * white;
 
     // use Oklab's L coordinate as luminance
-    let luma_in = luma_oklab(c_in);
+    let oklab_in = scrgb_to_oklab(c_in);
+    let luma_in = luma_oklab(oklab_in);
 
     // Reinhard tone-mapping algo.
     //
@@ -333,7 +337,8 @@ fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
-    scale_oklab(c_in, luma_out)
+    let oklab_out = scale_oklab(oklab_in, luma_out);
+    oklab_to_scrgb(oklab_out)
 }
 
 fn oklab_l_for_luma(luma: f32) -> f32 {
@@ -342,21 +347,19 @@ fn oklab_l_for_luma(luma: f32) -> f32 {
     gray_oklab.l
 }
 
-fn scale_oklab(c_in: Vec3, luma_out: f32) -> Vec3
+fn scale_oklab(oklab_in: Oklab, luma_out: f32) -> Oklab
 {
     let gray_l = oklab_l_for_luma(luma_out);
 
-    let oklab_in = scrgb_to_oklab(c_in);
     if oklab_in.l == 0.0 {
-        c_in
+        oklab_in
     } else {
         let ratio = gray_l / oklab_in.l;
-        let oklab_out = Oklab {
+        Oklab {
             l: gray_l,
             a: oklab_in.a * ratio,
             b: oklab_in.b * ratio,
-        };
-        oklab_to_scrgb(oklab_out)
+        }
     }
 }
 
@@ -476,7 +479,7 @@ struct Histogram {
 impl Histogram {
     fn new(source: &PixelBuffer) -> Self {
         let mut luma_vals = Vec::<f32>::new();
-        source.par_iter_rgb().map(luma_oklab).collect_into_vec(&mut luma_vals);
+        source.par_iter_rgb().map(luma_scrgb).collect_into_vec(&mut luma_vals);
         luma_vals.par_sort_unstable_by(|a, b| {
             match a.partial_cmp(b) {
                 Some(ordering) => ordering,
@@ -514,9 +517,11 @@ fn oklab_to_scrgb(c: Oklab) -> Vec3 {
 fn apply_levels(c_in: Vec3, level_min: f32, level_max: f32) -> Vec3 {
     let offset = level_min;
     let scale = level_max - level_min;
-    let luma_in = luma_oklab(c_in);
+    let oklab_in = scrgb_to_oklab(c_in);
+    let luma_in = luma_oklab(oklab_in);
     let luma_out = (luma_in - offset) / scale;
-    scale_oklab(c_in, luma_out)
+    let oklab_out = scale_oklab(oklab_in, luma_out);
+    oklab_to_scrgb(oklab_out)
 }
 
 struct Lazy<T, F> where F: (FnOnce() -> T) {
