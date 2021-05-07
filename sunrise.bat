@@ -4,9 +4,9 @@ call :convert 1-linear "--color-map=clip" "--tone-map=linear"
 call :convert 2-dark   "--color-map=clip" "--tone-map=linear" "--sdr-white=2560"
 call :convert 3-mapped "--color-map=clip"
 call :convert 4-gamut
-call :convert 5-dark "--sdr-white=160"
-call :convert 6-darker "--sdr-white=320"
-call :convert 7-darkest "--sdr-white=640"
+call :convert 5-gamma "--pre-gamma=0.5"
+call :convert 6-scale-gamma "--pre-gamma=0.5" "--sdr-white=400"
+call :convert 7-levels "--pre-gamma=0.5" "--sdr-white=400" "--levels-min=0%%%%" "--levels-max=100%%%%"
 
 exit /b %ERRORLEVEL%
 

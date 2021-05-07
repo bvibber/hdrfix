@@ -513,12 +513,20 @@ fn oklab_to_scrgb(c: Oklab) -> Vec3 {
     linear_srgb_to_scrgb(oklab_to_linear_srgb(c))
 }
 
-fn apply_levels(c_in: Vec3, level_min: f32, level_max: f32) -> Vec3 {
+fn apply_levels(c_in: Vec3, level_min: f32, level_max: f32, gamma: f32) -> Vec3 {
     let offset = level_min;
     let scale = level_max - level_min;
     let oklab_in = scrgb_to_oklab(c_in);
     let luma_in = luma_oklab(oklab_in);
-    let luma_out = (luma_in - offset) / scale;
+    let luma_out = ((luma_in - offset) / scale).powf(gamma);
+    let oklab_out = scale_oklab(oklab_in, luma_out);
+    oklab_to_scrgb(oklab_out)
+}
+
+fn apply_gamma(c_in: Vec3, gamma: f32) -> Vec3 {
+    let oklab_in = scrgb_to_oklab(c_in);
+    let luma_in = luma_oklab(oklab_in);
+    let luma_out = luma_in.powf(gamma);
     let oklab_out = scale_oklab(oklab_in, luma_out);
     oklab_to_scrgb(oklab_out)
 }
@@ -564,6 +572,18 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
             _ => Err(InvalidInputFile)
         }
     })?;
+    let width = source.width as usize;
+    let height = source.height as usize;
+
+    let pre_gamma: f32 = args.value_of("pre-gamma").expect("pre-gamma arg").parse()?;
+    let source = if pre_gamma == 1.0 {
+        source
+    } else {
+        let mut dest = PixelBuffer::new(width, height, PixelFormat::HDRFloat32);
+        dest.fill(source.map(|rgb| apply_gamma(rgb, pre_gamma)));
+        dest
+    };
+    let post_gamma: f32 = args.value_of("post-gamma").expect("post-gamma arg").parse()?;
 
     let sdr_white = args.value_of("sdr-white").unwrap().parse::<f32>()?;
 
@@ -597,8 +617,6 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         levels_max: Level::with_str(args.value_of("levels-max").expect("levels-max arg"))?,
     };
 
-    let width = source.width as usize;
-    let height = source.height as usize;
     let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
     time_func("hdr_to_sdr", || {
         Ok(tone_mapped.fill(source.map(|rgb| hdr_to_sdr_pixel(rgb, &options))))
@@ -616,7 +634,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         Ok(dest.fill(tone_mapped.map(|rgb| {
             // We have to color map again
             // in case the histogram pushed things back out of gamut.
-            clip((options.color_map)(apply_levels(rgb, levels_min, levels_max)))
+            clip((options.color_map)(apply_levels(rgb, levels_min, levels_max, post_gamma)))
         })))
     })?;
 
@@ -666,6 +684,14 @@ fn main() {
             .long("color-map")
             .possible_values(&["clip", "desaturate"])
             .default_value("desaturate"))
+        .arg(Arg::with_name("pre-gamma")
+            .help("Gamma power applied on input.")
+            .long("pre-gamma")
+            .default_value("1.0"))
+        .arg(Arg::with_name("post-gamma")
+            .help("Gamma power applied on output.")
+            .long("post-gamma")
+            .default_value("1.0"))
         .get_matches();
 
     match hdrfix(args) {
