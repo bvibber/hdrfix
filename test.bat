@@ -18,12 +18,10 @@ exit /b %ERRORLEVEL%
 
 :convert
 cargo run --release -- ^
+    --sdr-white=160 ^
     --hdr-max=100%% ^
-    --sdr-white=120 ^
-    --tone-map=reinhard-oklab ^
-    --color-map=oklab ^
-    --levels-min=0%% ^
-    --levels-max=100%% ^
+    --levels-min=0.1%% ^
+    --levels-max=99.9%% ^
     samples\%1-hdr.jxr ^
     samples\%1-sdr.png
 

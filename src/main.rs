@@ -39,10 +39,7 @@ impl Level {
 struct Options {
     sdr_white: f32,
     hdr_max: f32,
-    desaturation_coeff: f32,
-    mantiuk_c: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
-    gamma: f32,
     levels_min: Level,
     levels_max: Level,
     color_map: fn(Vec3) -> Vec3,
@@ -295,16 +292,6 @@ fn rec2100_to_scrgb(val: Vec3) -> Vec3 {
     matrix.mul_vec3(val * scale)
 }
 
-const KR: f32 = 0.2126;
-const KG: f32 = 0.7152;
-const KB: f32 = 0.0722;
-
-fn luma_scrgb(val: Vec3) -> f32 {
-    let k = Vec3::new(KR, KG, KB);
-    let scaled = val * k;
-    scaled.x + scaled.y + scaled.z
-}
-
 fn luma_oklab(val: Vec3) -> f32 {
     let oklab_in = scrgb_to_oklab(val);
     // oklab's l is not linear
@@ -319,44 +306,8 @@ fn luma_oklab(val: Vec3) -> f32 {
     rgb_gray.x
 }
 
-fn apply_gamma(input: Vec3, gamma: f32) -> Vec3 {
-    input.powf(gamma)
-}
-
 fn tonemap_linear(c_in: Vec3, _options: &Options) -> Vec3 {
     c_in
-}
-
-fn tonemap_reinhard_luma(c_in: Vec3, options: &Options) -> Vec3 {
-    // Map luminance from HDR to SDR domain, and scale the input color.
-    //
-    // Original:
-    // http://www.cmap.polytechnique.fr/%7Epeyre/cours/x2005signal/hdr_photographic.pdf
-    //
-    // Extended:
-    // https://64.github.io/tonemapping/#reinhard
-    // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
-    //
-    let white = options.hdr_max;
-    let white2 = white * white;
-    let luma_orig = luma_scrgb(c_in);
-    let luma_in = luma_orig.min(white);
-    let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
-
-    // simple version, no desaturation correction
-    //let c_out = c_in * (luma_out / luma_in);
-
-    // correcting version based on equation 2 from Mantiuk 2009
-    // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
-    //let s = options.desaturation_coeff;
-    //let c_out = (c_in / luma_in).powf(s) * luma_out;
-
-    // correcting version based on equation 3 from Mantiuk 2009
-    let s = options.desaturation_coeff;
-    // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
-    let c_out = (((c_in / luma_orig) - Vec3::ONE) * s + Vec3::ONE) * luma_out;
-
-    c_out
 }
 
 fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
@@ -408,31 +359,6 @@ fn scale_oklab(c_in: Vec3, luma_out: f32) -> Vec3
     }
 }
 
-fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
-    // Variant that maps R, G, and B channels separately.
-    // This should desaturate very bright colors gradually, but will
-    // possible cause some color shift.
-    let white = options.hdr_max;
-    let white2 = white * white;
-    let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
-    c_out
-}
-
-fn tonemap_mantiuk(c_in: Vec3, options: &Options) -> Vec3 {
-    // https://vccimaging.org/Publications/Mantiuk2009CCT/Mantiuk2009CCT.pdf
-
-    // Equation 4: tone-mapping
-    let c = options.mantiuk_c;
-    let b = 1.0 / options.hdr_max;
-    let l_in = luma_scrgb(c_in);
-    let l_out = (l_in * b).powf(c);
-
-    // Equation 3: color preservation
-    let s = c;
-    let c_out = (((c_in / l_in) - Vec3::ONE) * s + Vec3::ONE) * l_out;
-    c_out
-}
-
 fn clip(input: Vec3) -> Vec3 {
     input.max(Vec3::ZERO).min(Vec3::ONE)
 }
@@ -440,33 +366,6 @@ fn clip(input: Vec3) -> Vec3 {
 fn color_clip(input: Vec3) -> Vec3
 {
     clip(input)
-}
-
-fn color_darken(input: Vec3) -> Vec3
-{
-    let max = input.max_element();
-    if max > 1.0 {
-        input / Vec3::splat(max)
-    } else {
-        input
-    }
-}
-
-fn color_desaturate(c_in: Vec3) -> Vec3
-{
-    // algorithm of my own devise
-    // only for colors out of gamut, desaturate until it matches luminance
-    let max = c_in.max_element();
-    if max > 1.0 {
-        let luma_in = luma_scrgb(c_in);
-        let white = Vec3::splat(luma_in);
-        let diff = c_in - white;
-        let ratio = (max - 1.0) / max;
-        let desaturated = c_in - diff * ratio;
-        clip(desaturated)
-    } else {
-        c_in
-    }
 }
 
 fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
@@ -479,7 +378,7 @@ fn desat_oklab(c_in: Oklab, saturation: f32) -> Vec3
     oklab_to_scrgb(c_out)
 }
 
-fn color_oklab(c_in: Vec3) -> Vec3
+fn color_desat_oklab(c_in: Vec3) -> Vec3
 {
     let max = c_in.max_element();
     if max > 1.0 {
@@ -521,7 +420,6 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
     let mut val = rgb_scrgb;
     val = val * SDR_WHITE / options.sdr_white;
     val = (options.tone_map)(val, &options);
-    val = apply_gamma(val, options.gamma);
     val = (options.color_map)(val);
     val
 }
@@ -594,13 +492,6 @@ fn oklab_to_scrgb(c: Oklab) -> Vec3 {
 }
 
 fn apply_levels(c_in: Vec3, level_min: f32, level_max: f32) -> Vec3 {
-    /*
-    let offset = level_min;
-    let scale = level_max - level_min;
-    let luma_in = luma_scrgb(rgb);
-    let luma_out = (luma_in - offset) / scale;
-    rgb * (luma_out / luma_in)
-    */
     let offset = level_min;
     let scale = level_max - level_min;
     let luma_in = luma_oklab(c_in);
@@ -670,22 +561,14 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         hdr_max: hdr_max,
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
-            "reinhard-luma" => tonemap_reinhard_luma,
-            "reinhard-oklab" => tonemap_reinhard_oklab,
-            "reinhard-rgb" => tonemap_reinhard_rgb,
-            "mantiuk" => tonemap_mantiuk,
+            "reinhard" => tonemap_reinhard_oklab,
             _ => unreachable!("bad tone-map option")
         },
-        desaturation_coeff: args.value_of("desaturation-coeff").expect("desat coeff arg").parse::<f32>()?,
-        mantiuk_c: args.value_of("mantiuk-c").expect("mantiuk-c arg").parse::<f32>()?,
         color_map: match args.value_of("color-map").expect("color-map arg") {
             "clip" => color_clip,
-            "darken" => color_darken,
-            "desaturate" => color_desaturate,
-            "oklab" => color_oklab,
+            "desaturate" => color_desat_oklab,
             _ => unreachable!("bad color-map option")
         },
-        gamma: args.value_of("gamma").expect("gamma arg").parse::<f32>()?,
         levels_min: Level::with_str(args.value_of("levels-min").expect("levels-min arg"))?,
         levels_max: Level::with_str(args.value_of("levels-max").expect("levels-max arg"))?,
     };
@@ -740,24 +623,12 @@ fn main() {
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard-luma", "reinhard-oklab", "reinhard-rgb", "mantiuk"])
-            .default_value("reinhard-luma"))
+            .possible_values(&["linear", "reinhard"])
+            .default_value("reinhard"))
         .arg(Arg::with_name("hdr-max")
-            .help("Max HDR luminance level for Reinhard and Mantiuk algorithms, in nits.")
+            .help("Max HDR luminance level for Reinhard algorithm, in nits.")
             .long("hdr-max")
             .default_value("10000"))
-        .arg(Arg::with_name("desaturation-coeff")
-            .help("Desaturation coefficient for Reinhard luminance to chroma mapping.")
-            .long("desaturation-coeff")
-            .default_value("1.0"))
-        .arg(Arg::with_name("mantiuk-c")
-            .help("The 'c' contrast compression factor for Mantiuk tone-mapping.")
-            .long("mantiuk-c")
-            .default_value("1.0"))
-        .arg(Arg::with_name("gamma")
-            .help("Gamma curve to apply on luminance values after tone mapping.")
-            .long("gamma")
-            .default_value("1.0"))
         .arg(Arg::with_name("levels-min")
             .help("Minimum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
             .long("levels-min")
@@ -769,7 +640,7 @@ fn main() {
         .arg(Arg::with_name("color-map")
             .help("Method for mapping and fixing out of gamut colors.")
             .long("color-map")
-            .possible_values(&["clip", "darken", "desaturate", "oklab"])
+            .possible_values(&["clip", "desaturate"])
             .default_value("desaturate"))
         .get_matches();
 
