@@ -22,6 +22,7 @@ JPEG XR conversion is done with the `jpegxr` crate, which wraps Microsoft's BSD-
 * png for reading input PNG
 * mtpng for writing output PNG
 * jpegxr for the JPEG XR C libray (and through it, bindgen and cc)
+* oklab for perceptual color modifications
 
 # Installation
 
@@ -52,17 +53,14 @@ hdrfix --help
 ```
 
 Adjustable parmeters:
-* `--pre-scale=N` multiplies the input signal. The default is `1.0`, passing through the original signal.
+* `--exposure=N` adjusts the input signal by the desired number of f-stops up or down. The default is `0`, passing through the original signal.
 * `--pre-gamma-N` applies an exponential gamma curve to the input after scaling. The default is `1.0`, passing through the original signal.
-* `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `reinhard-luma` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `reinhard-luma`.
-* `--desaturation-coeff` sets the desaturation coefficient for chroma mapping in the Reinhard luma version. Default is `1.0` (no desaturation), but `0.75` looks nice on my test images.
-* `--hdr-max=N` sets the maximum luminance level for the Reinhard tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of slightly poorer contrast in highlights. The default is `10000` nits which is the maximum for HDR10 input. A lower value will cause very bright details to blow out, but slightly lighten dark areas.
+* `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `reinhard` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better but can lead to out of gamut colors needing to be corrected; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `reinhard`.
+* `--hdr-max=N` sets the maximum luminance level for the Reinhard tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of slightly poorer contrast in highlights. The default is `100%` which checks for the brightest value from the image. A lower value will cause very bright details to blow out, but slightly lighten dark areas. Set as either a luminance in nits or a percentile of the input data.
 * `--post-gamma-N` applies an exponential gamma curve to the output after tone mapping. The default is `1.0`, passing through the original signal.
-* `--post-scale=N` multiplies the output signal. The default is `1.0`, passing through the original signal.
 * `--color-map=A` sets the color-mapping algorithm for out of gamut colors after tone-mapping. Choices are `clip` which can alter color and brightness, `darken` which can cause major shifts in relative contrast but preserves color precisely, or `desaturate` which preserves luminance but desaturates color as necessary to fit in gamut. Deafult is `desaturate`.
-* `--histogram` calculates a luminane histogram from the output, then stretches the total luminance range of the output to fit. If none of your pixels reach maximum brightness, this will brighten your image. Default is off (no histogram is calculated and no dynamic range expansion is done on output).
-* `--histogram-min` percentile (in 0..1 space) below which to flatten darks to black. Defaults to `0.0`.
-* `--histogram-max` perentile (in 0..1 space) above which to flatten brights to white. Defaults to `1.0`.
+* `--levels-min` sets the minimum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Darker colors will be flattened to black in output. Defaults to `0`.
+* `--levels-max` sets the maximum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Brighter colors will be flattened to white in output. Defaults to `1`.
 
 # Todo / roadmap
 

@@ -1,6 +1,6 @@
 rem @echo off
 
-call :convert 1-dark   "--color-map=clip" "--tone-map=linear" "--sdr-white=2560"
+call :convert 1-dark   "--color-map=clip" "--tone-map=linear" "--exposure=-5"
 call :convert 2-linear "--color-map=clip" "--tone-map=linear"
 call :convert 3-maprgb "--color-map=clip" "--tone-map=reinhard-rgb"
 call :convert 4-mapped "--color-map=clip"

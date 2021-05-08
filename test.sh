@@ -1,6 +1,6 @@
 convert() {
     cargo run --release -- \
-        --sdr-white=160 \
+        --exposure=-1 \
         --hdr-max=100% \
         --levels-min=0.1% \
         --levels-max=99.9% \

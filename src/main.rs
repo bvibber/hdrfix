@@ -2,6 +2,7 @@ use std::cmp::Ordering;
 use std::fs::File;
 use std::io;
 use std::num;
+use std::ops::Mul;
 use std::path::Path;
 
 // Math bits
@@ -38,7 +39,7 @@ impl Level {
 }
 
 struct Options {
-    sdr_white: f32,
+    exposure: f32,
     hdr_max: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
     levels_min: Level,
@@ -471,10 +472,16 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 const REC2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 const SDR_WHITE: f32 = 80.0;
 
+fn apply_exposure<T>(val: T, stops: f32) -> T::Output
+where T: Mul<f32>
+{
+    val * 2.0_f32.powf(stops)
+}
+
 fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
     let mut val = rgb_scrgb;
-    val = val * SDR_WHITE / options.sdr_white;
+    val = apply_exposure(val, options.exposure);
     val = (options.tone_map)(val, &options);
     val = (options.color_map)(val);
     val
@@ -619,11 +626,11 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     };
     let post_gamma: f32 = args.value_of("post-gamma").expect("post-gamma arg").parse()?;
 
-    let sdr_white = args.value_of("sdr-white").unwrap().parse::<f32>()?;
+    let exposure = args.value_of("exposure").unwrap().parse::<f32>()?;
 
     let hdr_max = match Level::with_str(args.value_of("hdr-max").unwrap())? {
         // hdr_max is in nits if scalar, so scale it back to scrgb
-        Level::Scalar(val) => val / sdr_white,
+        Level::Scalar(val) => apply_exposure(val, -exposure),
 
         // If given a percentile for hdr_max, detect from input histogram.
         Level::Percentile(val) => {
@@ -635,7 +642,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     };
 
     let options = Options {
-        sdr_white: sdr_white,
+        exposure: exposure,
         hdr_max: hdr_max,
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
@@ -694,19 +701,19 @@ fn main() {
             .help("Output filename, must be .png.")
             .required(true)
             .index(2))
-        .arg(Arg::with_name("sdr-white")
-            .help("SDR white point in nits, used to scale the HDR input linearly so that input value of standard 80 nits is scaled up to this value. Defaults to 80 nits, which is standard SDR calibration for a darkened room.")
-            .long("sdr-white")
-            .default_value("80"))
+        .arg(Arg::with_name("exposure")
+            .help("Exposure adjustment in stops, used to scale the HDR input linearly. May be positive or negative; defaults to 0, which does not change the exposure.")
+            .long("exposure")
+            .default_value("0"))
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
             .possible_values(&["linear", "reinhard", "reinhard-rgb"])
             .default_value("reinhard"))
         .arg(Arg::with_name("hdr-max")
-            .help("Max HDR luminance level for Reinhard algorithm, in nits.")
+            .help("Max HDR luminance level for Reinhard algorithm, in nits or a percentile to be calculated from input data. The default is 100%, which represents the highest input value.")
             .long("hdr-max")
-            .default_value("10000"))
+            .default_value("100%"))
         .arg(Arg::with_name("levels-min")
             .help("Minimum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
             .long("levels-min")
