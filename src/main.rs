@@ -21,6 +21,10 @@ use rayon::prelude::*;
 // Directory watch bits
 use notify::{DebouncedEvent, RecursiveMode, RecommendedWatcher, Watcher};
 
+// Generic format image i/o
+use image::{ColorType, ImageError};
+use image::codecs::jpeg::JpegEncoder;
+
 // Error bits
 use thiserror::Error;
 
@@ -203,12 +207,16 @@ enum LocalError {
     JXRError(#[from] jpegxr::JXRError),
     #[error("Invalid input file type")]
     InvalidInputFile,
+    #[error("Invalid output file type")]
+    InvalidOutputFile,
     #[error("Unsupported pixel format")]
     UnsupportedPixelFormat,
     #[error("Folder watch error")]
     NotifyError(#[from] notify::Error),
     #[error("Recv error")]
     RecvError(#[from] RecvError),
+    #[error("Image format error")]
+    ImageError(#[from] ImageError),
 }
 use LocalError::*;
 
@@ -543,6 +551,20 @@ fn write_png(filename: &Path, data: &PixelBuffer)
     Ok(())
 }
 
+fn write_jpeg(filename: &Path, data: &PixelBuffer)
+   -> Result<()>
+{
+    // @todo allow setting jpeg quality
+    let mut writer = File::create(filename)?;
+    let mut encoder = JpegEncoder::new_with_quality(&mut writer, 95);
+    encoder.encode(data.bytes(),
+        data.width as u32,
+        data.height as u32,
+        ColorType::Rgb8
+    )?;
+    Ok(())
+}
+
 struct Histogram {
     luma_vals: Vec<f32>,
 }
@@ -719,8 +741,13 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
         })))
     })?;
 
-    time_func("write_png", || {
-        write_png(output_filename, &dest)
+    time_func("write output", || {
+        let ext = extension(output_filename);
+        match ext {
+            "png" => write_png(output_filename, &dest),
+            "jpg" | "jpeg" => write_jpeg(output_filename, &dest),
+            _ => Err(InvalidOutputFile)
+        }
     })?;
 
     return Ok(());
@@ -739,7 +766,7 @@ fn run(args: &ArgMatches) -> Result<()> {
                     let ext = extension(&input_path);
                     if ext == "jxr" {
                         let mut output_filename: OsString = input_path.file_stem().unwrap().to_os_string();
-                        output_filename.push("-sdr.png");
+                        output_filename.push("-sdr.jpg");
                         let output_path = input_path.with_file_name(output_filename);
                         if !output_path.exists() {
                             hdrfix(&input_path, &output_path, args)?;
@@ -805,7 +832,7 @@ fn main() {
             .long("post-gamma")
             .default_value("1.0"))
         .arg(Arg::with_name("watch")
-            .help("Watch a folder and convert any *.jxr files that appear into *-sdr.png versions. Provide a folder name.")
+            .help("Watch a folder and convert any *.jxr files that appear into *-sdr.jpg versions. Provide a folder name.")
             .long("watch")
             .takes_value(true))
         .get_matches();

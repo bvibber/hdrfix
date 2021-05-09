@@ -23,6 +23,7 @@ JPEG XR conversion is done with the `jpegxr` crate, which wraps Microsoft's BSD-
 * mtpng for writing output PNG
 * jpegxr for the JPEG XR C libray (and through it, bindgen and cc)
 * oklab for perceptual color modifications
+* image for writing output JPEG
 
 # Installation
 
@@ -43,7 +44,13 @@ cargo install hdrfix
 Basic conversion:
 
 ```
-hdrfix screenshot.png output.png
+hdrfix screenshot.jxr output.jpg
+```
+
+Watching a folder, converting all newly-added `*.jxr` files to `*-sdr.jpg`:
+
+```
+hdrfix --watch=.
 ```
 
 Interactive help!
@@ -62,7 +69,7 @@ Adjustable parmeters:
 * `--color-map=A` sets the color-mapping algorithm for out of gamut colors after tone-mapping. Choices are `clip` which can alter color and brightness, `darken` which can cause major shifts in relative contrast but preserves color precisely, or `desaturate` which preserves luminance but desaturates color as necessary to fit in gamut. Deafult is `desaturate`.
 * `--levels-min` sets the minimum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Darker colors will be flattened to black in output. Defaults to `0`.
 * `--levels-max` sets the maximum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Brighter colors will be flattened to white in output. Defaults to `1`.
-* `--watch=P` watches a folder path for new `*.jxr` files and converts them to SDR `*.png` files.
+* `--watch=P` watches a folder path for new `*.jxr` files and converts them to SDR `*-sdr.jpg` files.
 
 # Todo / roadmap
 

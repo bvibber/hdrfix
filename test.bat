@@ -24,6 +24,6 @@ cargo run --release -- ^
     --levels-min=0.1%% ^
     --levels-max=99.9%% ^
     samples\%1-hdr.jxr ^
-    samples\%1-sdr.png
+    samples\%1-sdr.jpg
 
 exit /b 0

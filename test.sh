@@ -5,15 +5,7 @@ convert() {
         --levels-min=0.1% \
         --levels-max=99.9% \
         samples/"$1"-hdr.jxr \
-        samples/"$1"-sdr.png
-
-    # Roughly equivalent to MSFS SDR
-    #cargo run --release -- \
-    #    --exposure=-1.5 \
-    #    --tone-map=reinhard-rgb \
-    #    --hdr-max=640 \
-    #    samples/"$1"-hdr.jxr \
-    #    samples/"$1"-sim.png
+        samples/"$1"-sdr.jpg
 }
 
 convert burbank
