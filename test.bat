@@ -35,4 +35,11 @@ cargo run --release -- ^
     samples\%1-hdr.jxr ^
     samples\%1-sdr.png
 
+cargo run --release -- ^
+    --exposure=-1.5 ^
+    --tone-map=reinhard-rgb ^
+    --hdr-max=640 ^
+    samples\%1-hdr.jxr ^
+    samples\%1-sim.png
+
 exit /b 0

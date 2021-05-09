@@ -629,8 +629,8 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     let exposure = args.value_of("exposure").unwrap().parse::<f32>()?;
 
     let hdr_max = match Level::with_str(args.value_of("hdr-max").unwrap())? {
-        // hdr_max is in nits if scalar, so scale it back to scrgb
-        Level::Scalar(val) => apply_exposure(val, -exposure),
+        // hdr_max input is in nits if scalar, so scale it to scrgb
+        Level::Scalar(val) => apply_exposure(val / SDR_WHITE, exposure),
 
         // If given a percentile for hdr_max, detect from input histogram.
         Level::Percentile(val) => {
