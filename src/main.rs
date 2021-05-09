@@ -41,6 +41,7 @@ impl Level {
 struct Options {
     exposure: f32,
     hdr_max: f32,
+    saturation: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
     levels_min: Level,
     levels_max: Level,
@@ -348,7 +349,7 @@ fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
     // TMO_reinhardext​(C) = C(1 + C/C_white^2​) / (1 + C)
     //
     let luma_out = luma_in * (1.0 + luma_in / white2) / (1.0 + luma_in);
-    let oklab_out = scale_oklab(oklab_in, luma_out);
+    let oklab_out = scale_oklab_desat(oklab_in, luma_out, options.saturation);
     oklab_to_scrgb(oklab_out)
 }
 
@@ -356,6 +357,22 @@ fn oklab_l_for_luma(luma: f32) -> f32 {
     let gray_rgb = oklab::RGB::new(luma, luma, luma);
     let gray_oklab = linear_srgb_to_oklab(gray_rgb);
     gray_oklab.l
+}
+
+fn scale_oklab_desat(oklab_in: Oklab, luma_out: f32, saturation: f32) -> Oklab
+{
+    let l_in = oklab_in.l;
+    if l_in == 0.0 {
+        oklab_in
+    } else {
+        let l_out = oklab_l_for_luma(luma_out);
+        let ratio = (l_out / l_in).powf(1.0 / saturation);
+        Oklab {
+            l: l_out,
+            a: oklab_in.a * ratio,
+            b: oklab_in.b * ratio,
+        }
+    }
 }
 
 fn scale_oklab(oklab_in: Oklab, luma_out: f32) -> Oklab
@@ -644,6 +661,7 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
     let options = Options {
         exposure: exposure,
         hdr_max: hdr_max,
+        saturation: args.value_of("saturation").expect("saturation arg").parse()?,
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
             "reinhard" => tonemap_reinhard_oklab,
@@ -714,6 +732,10 @@ fn main() {
             .help("Max HDR luminance level for Reinhard algorithm, in nits or a percentile to be calculated from input data. The default is 100%, which represents the highest input value.")
             .long("hdr-max")
             .default_value("100%"))
+        .arg(Arg::with_name("saturation")
+            .help("Coefficient for how to scale saturation in tone mapping. 1.0 will maintain saturation; smaller values will desaturate brighter colors faster.")
+            .long("saturation")
+            .default_value("1"))
         .arg(Arg::with_name("levels-min")
             .help("Minimum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
             .long("levels-min")

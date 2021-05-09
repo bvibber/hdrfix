@@ -19,27 +19,12 @@ exit /b %ERRORLEVEL%
 :convert
 
 cargo run --release -- ^
-    --exposure=-1 ^
-    --hdr-max=100%% ^
-    --levels-min=0.1%% ^
-    --levels-max=99.9%% ^
-    --tone-map=linear ^
-    samples\%1-hdr.jxr ^
-    samples\%1-linear.png
-
-cargo run --release -- ^
-    --exposure=-1 ^
-    --hdr-max=100%% ^
+    --exposure=-1.5 ^
+    --hdr-max=1000 ^
+    --saturation=0.333 ^
     --levels-min=0.1%% ^
     --levels-max=99.9%% ^
     samples\%1-hdr.jxr ^
     samples\%1-sdr.png
-
-cargo run --release -- ^
-    --exposure=-1.5 ^
-    --tone-map=reinhard-rgb ^
-    --hdr-max=640 ^
-    samples\%1-hdr.jxr ^
-    samples\%1-sim.png
 
 exit /b 0
