@@ -1,9 +1,12 @@
 use std::cmp::Ordering;
+use std::ffi::OsString;
 use std::fs::File;
 use std::io;
 use std::num;
 use std::ops::Mul;
 use std::path::Path;
+use std::sync::mpsc::{channel, RecvError};
+use std::time::Duration;
 
 // Math bits
 use glam::f32::{Mat3, Vec3};
@@ -14,6 +17,9 @@ use time::OffsetDateTime;
 
 // Parallelism bits
 use rayon::prelude::*;
+
+// Directory watch bits
+use notify::{DebouncedEvent, RecursiveMode, RecommendedWatcher, Watcher};
 
 // Error bits
 use thiserror::Error;
@@ -199,6 +205,10 @@ enum LocalError {
     InvalidInputFile,
     #[error("Unsupported pixel format")]
     UnsupportedPixelFormat,
+    #[error("Folder watch error")]
+    NotifyError(#[from] notify::Error),
+    #[error("Recv error")]
+    RecvError(#[from] RecvError),
 }
 use LocalError::*;
 
@@ -214,7 +224,7 @@ fn time_func<F, G>(msg: &str, func: F) -> Result<G>
 
 // Read an input PNG and return its size and contents
 // It must be a certain format (8bpp true color no alpha)
-fn read_png(filename: &str)
+fn read_png(filename: &Path)
     -> Result<PixelBuffer>
 {
     use png::Decoder;
@@ -242,7 +252,7 @@ fn read_png(filename: &str)
     Ok(buffer)
 }
 
-fn read_jxr(filename: &str)
+fn read_jxr(filename: &Path)
   -> Result<PixelBuffer>
 {
     use jpegxr::ImageDecode;
@@ -508,7 +518,7 @@ fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
     val
 }
 
-fn write_png(filename: &str, data: &PixelBuffer)
+fn write_png(filename: &Path, data: &PixelBuffer)
    -> Result<()>
 {
     use mtpng::{CompressionLevel, Header};
@@ -624,10 +634,16 @@ impl<F> Lazy<Histogram,F> where F: (FnOnce() -> Histogram) {
     }
 }
 
-fn hdrfix(args: ArgMatches) -> Result<String> {
-    let input_filename = args.value_of("input").unwrap();
+fn extension(input_filename: &Path) -> &str {
+    input_filename.extension().unwrap().to_str().unwrap()
+}
+
+fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> Result<()>
+{
+    println!("{} -> {}", input_filename.to_str().unwrap(), output_filename.to_str().unwrap());
+
     let source = time_func("read_input", || {
-        let ext = Path::new(&input_filename).extension().unwrap().to_str().unwrap();
+        let ext = extension(input_filename);
         match ext {
             "png" => read_png(input_filename),
             "jxr" => read_jxr(input_filename),
@@ -703,12 +719,43 @@ fn hdrfix(args: ArgMatches) -> Result<String> {
         })))
     })?;
 
-    let output_filename = args.value_of("output").unwrap();
     time_func("write_png", || {
         write_png(output_filename, &dest)
     })?;
 
-    return Ok(output_filename.to_string());
+    return Ok(());
+}
+
+fn run(args: &ArgMatches) -> Result<()> {
+    match args.value_of("watch") {
+        Some(folder) => {
+            let (tx, rx) = channel::<DebouncedEvent>();
+            let mut watcher = RecommendedWatcher::new(tx, Duration::from_secs(2))?;
+            watcher.watch(folder, RecursiveMode::Recursive)?;
+
+            loop {
+                let event = rx.recv()?;
+                if let DebouncedEvent::Create(input_filename) = event {
+                    let ext = extension(&input_filename);
+                    if ext == "jxr" {
+                        let mut output_filename: OsString = input_filename.file_name().unwrap().to_os_string();
+                        output_filename.push("-sdr.png");
+    
+                        let input_path = Path::new(&input_filename);
+                        let output_path = Path::new(&output_filename);
+                        if !output_path.exists() {
+                            hdrfix(&input_path, &output_path, args)?;
+                        }
+                    }
+                }
+            }
+        },
+        None => {
+            let input_filename = Path::new(args.value_of("input").expect("input filename missing"));
+            let output_filename = Path::new(args.value_of("output").expect("output filename missing"));
+            hdrfix(input_filename, output_filename, args)
+        }
+    }
 }
 
 fn main() {
@@ -717,11 +764,9 @@ fn main() {
         .author("Brion Vibber <brion@pobox.com>")
         .arg(Arg::with_name("input")
             .help("Input filename, must be .jxr or .png as saved by NVIDIA capture overlay.")
-            .required(true)
             .index(1))
         .arg(Arg::with_name("output")
             .help("Output filename, must be .png.")
-            .required(true)
             .index(2))
         .arg(Arg::with_name("exposure")
             .help("Exposure adjustment in stops, used to scale the HDR input linearly. May be positive or negative; defaults to 0, which does not change the exposure.")
@@ -761,10 +806,14 @@ fn main() {
             .help("Gamma power applied on output.")
             .long("post-gamma")
             .default_value("1.0"))
+        .arg(Arg::with_name("watch")
+            .help("Watch a folder and convert any *.jxr files that appear into *-sdr.png versions. Provide a folder name.")
+            .long("watch")
+            .takes_value(true))
         .get_matches();
 
-    match hdrfix(args) {
-        Ok(outfile) => println!("Saved: {}", outfile),
+    match run(&args) {
+        Ok(_) => println!("Done."),
         Err(e) => eprintln!("Error: {}", e),
     }
 }

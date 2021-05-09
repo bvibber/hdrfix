@@ -62,6 +62,7 @@ Adjustable parmeters:
 * `--color-map=A` sets the color-mapping algorithm for out of gamut colors after tone-mapping. Choices are `clip` which can alter color and brightness, `darken` which can cause major shifts in relative contrast but preserves color precisely, or `desaturate` which preserves luminance but desaturates color as necessary to fit in gamut. Deafult is `desaturate`.
 * `--levels-min` sets the minimum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Darker colors will be flattened to black in output. Defaults to `0`.
 * `--levels-max` sets the maximum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Brighter colors will be flattened to white in output. Defaults to `1`.
+* `--watch=P` watches a folder path for new `*.jxr` files and converts them to SDR `*.png` files.
 
 # Todo / roadmap
 
@@ -69,9 +70,6 @@ Definitely/short-term:
 * auto-output-filename feature to make it easier to use on live folders
 * add JPEG output
 * add compression params for JPEG output
-
-Probably:
-* 'folder watch' feature to convert all new .jxr files appearing in a folder while we run with default parameters
 
 Maybe/later/no rush:
 * see if can get a performance boost from Vec3A instead of Vec3 (so far it's been slightly slower when tested)
