@@ -21,7 +21,6 @@ exit /b %ERRORLEVEL%
 cargo run --release -- ^
     --exposure=-1.5 ^
     --hdr-max=1000 ^
-    --saturation=0.333 ^
     --levels-min=0.1%% ^
     --levels-max=99.9%% ^
     samples\%1-hdr.jxr ^

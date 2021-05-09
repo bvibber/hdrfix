@@ -366,7 +366,11 @@ fn scale_oklab_desat(oklab_in: Oklab, luma_out: f32, saturation: f32) -> Oklab
         oklab_in
     } else {
         let l_out = oklab_l_for_luma(luma_out);
-        let ratio = (l_out / l_in).powf(1.0 / saturation);
+        // oklab coords scale cubically
+        // 1.0 -> desaturate linearly according to luma compression ratio
+        // 0.5 -> desaturate more aggressively
+        // 2.0 -> saturate more aggressively
+        let ratio = (l_out / l_in).powf(3.0 / saturation);
         Oklab {
             l: l_out,
             a: oklab_in.a * ratio,
@@ -733,7 +737,7 @@ fn main() {
             .long("hdr-max")
             .default_value("100%"))
         .arg(Arg::with_name("saturation")
-            .help("Coefficient for how to scale saturation in tone mapping. 1.0 will maintain saturation; smaller values will desaturate brighter colors faster.")
+            .help("Coefficient for how to scale saturation in tone mapping. 1.0 will desaturate linearly to the compression ratio; smaller values will desaturate more aggressively.")
             .long("saturation")
             .default_value("1"))
         .arg(Arg::with_name("levels-min")
