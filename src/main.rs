@@ -735,14 +735,12 @@ fn run(args: &ArgMatches) -> Result<()> {
 
             loop {
                 let event = rx.recv()?;
-                if let DebouncedEvent::Create(input_filename) = event {
-                    let ext = extension(&input_filename);
+                if let DebouncedEvent::Create(input_path) = event {
+                    let ext = extension(&input_path);
                     if ext == "jxr" {
-                        let mut output_filename: OsString = input_filename.file_name().unwrap().to_os_string();
+                        let mut output_filename: OsString = input_path.file_stem().unwrap().to_os_string();
                         output_filename.push("-sdr.png");
-    
-                        let input_path = Path::new(&input_filename);
-                        let output_path = Path::new(&output_filename);
+                        let output_path = input_path.with_file_name(output_filename);
                         if !output_path.exists() {
                             hdrfix(&input_path, &output_path, args)?;
                         }
