@@ -23,7 +23,7 @@ JPEG XR conversion is done with the `jpegxr` crate, which wraps Microsoft's BSD-
 * mtpng for writing output PNG
 * jpegxr for the JPEG XR C libray (and through it, bindgen and cc)
 * oklab for perceptual color modifications
-* image for writing output JPEG
+* mozjpeg for writing output JPEG
 
 # Installation
 

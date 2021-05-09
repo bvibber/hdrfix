@@ -1,7 +1,7 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io;
+use std::io::{self, Write};
 use std::num;
 use std::ops::Mul;
 use std::path::Path;
@@ -20,10 +20,6 @@ use rayon::prelude::*;
 
 // Directory watch bits
 use notify::{DebouncedEvent, RecursiveMode, RecommendedWatcher, Watcher};
-
-// Generic format image i/o
-use image::{ColorType, ImageError};
-use image::codecs::jpeg::JpegEncoder;
 
 // Error bits
 use thiserror::Error;
@@ -215,8 +211,8 @@ enum LocalError {
     NotifyError(#[from] notify::Error),
     #[error("Recv error")]
     RecvError(#[from] RecvError),
-    #[error("Image format error")]
-    ImageError(#[from] ImageError),
+    #[error("JPEG write failure")]
+    JpegWriteFailure,
 }
 use LocalError::*;
 
@@ -555,14 +551,21 @@ fn write_jpeg(filename: &Path, data: &PixelBuffer)
    -> Result<()>
 {
     // @todo allow setting jpeg quality
-    let mut writer = File::create(filename)?;
-    let mut encoder = JpegEncoder::new_with_quality(&mut writer, 95);
-    encoder.encode(data.bytes(),
-        data.width as u32,
-        data.height as u32,
-        ColorType::Rgb8
-    )?;
-    Ok(())
+    std::panic::catch_unwind(|| {
+        use mozjpeg::{Compress, ColorSpace};
+        let mut c = Compress::new(ColorSpace::JCS_EXT_RGB);
+        c.set_size(data.width, data.height);
+        c.set_quality(95.0);
+        c.set_mem_dest(); // can't write direct to file?
+        c.start_compress();
+        if !c.write_scanlines(data.bytes()) {
+            panic!("error writing scanlines");
+        }
+        c.finish_compress();
+        let mut writer = File::create(filename).expect("error creating output file");
+        let data = c.data_as_mut_slice().expect("error accessing JPEG output buffer");
+        writer.write_all(data).expect("error writing output file");
+    }).map_err(|_| JpegWriteFailure)
 }
 
 struct Histogram {
