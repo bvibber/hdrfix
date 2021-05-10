@@ -60,6 +60,7 @@ hdrfix --help
 ```
 
 Adjustable parmeters:
+* `--auto-exposure=N` percentile of input signal to average to re-scale input to neutral mid-tone. Default is `0.5`, which passes through input unchanged.
 * `--exposure=N` adjusts the input signal by the desired number of f-stops up or down. The default is `0`, passing through the original signal.
 * `--pre-gamma-N` applies an exponential gamma curve to the input after scaling. The default is `1.0`, passing through the original signal.
 * `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `reinhard` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better but can lead to out of gamut colors needing to be corrected; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `reinhard`.

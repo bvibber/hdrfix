@@ -3,7 +3,6 @@ use std::ffi::OsString;
 use std::fs::File;
 use std::io::{self, Write};
 use std::num;
-use std::ops::Mul;
 use std::path::Path;
 use std::sync::mpsc::{channel, RecvError};
 use std::time::Duration;
@@ -45,7 +44,7 @@ impl Level {
 }
 
 struct Options {
-    exposure: f32,
+    scale: f32,
     hdr_max: f32,
     saturation: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
@@ -509,16 +508,15 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 const REC2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
 const SDR_WHITE: f32 = 80.0;
 
-fn apply_exposure<T>(val: T, stops: f32) -> T::Output
-where T: Mul<f32>
+fn exposure_scale(stops: f32) -> f32
 {
-    val * 2.0_f32.powf(stops)
+    2.0_f32.powf(stops)
 }
 
 fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
     let mut val = rgb_scrgb;
-    val = apply_exposure(val, options.exposure);
+    val = val * options.scale;
     val = (options.tone_map)(val, &options);
     val = (options.color_map)(val);
     val
@@ -610,6 +608,18 @@ impl Histogram {
         let max_index = self.luma_vals.len() - 1;
         let target_index = (max_index as f32 * target / 100.0) as usize;
         self.luma_vals[target_index]
+    }
+
+    fn average_below_percentile(&self, percent: f32) -> f32 {
+        let max = self.percentile(percent);
+        let (sum, count) = self.luma_vals.iter().fold((0.0f32, 0usize), |(sum, count), luma| {
+            if *luma > max {
+                (sum, count)
+            } else {
+                (sum + luma, count + 1)
+            }
+        });
+        sum / count as f32
     }
 }
 
@@ -707,23 +717,27 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
     };
     let post_gamma: f32 = args.value_of("post-gamma").expect("post-gamma arg").parse()?;
 
+    let mut input_histogram = Lazy::new(|| time_func("input histogram", || {
+        Ok(Histogram::new(&source))
+    }).unwrap());
+
     let exposure = args.value_of("exposure").unwrap().parse::<f32>()?;
+    let auto_exposure = Level::with_str(args.value_of("auto-exposure").unwrap())?;
+    let scale = exposure_scale(exposure) * 0.5 / match auto_exposure {
+        Level::Scalar(level) => level,
+        Level::Percentile(percent) => input_histogram.force().average_below_percentile(percent),
+    };
 
     let hdr_max = match Level::with_str(args.value_of("hdr-max").unwrap())? {
         // hdr_max input is in nits if scalar, so scale it to scrgb
-        Level::Scalar(val) => apply_exposure(val / SDR_WHITE, exposure),
+        Level::Scalar(nits) => nits / SDR_WHITE,
 
         // If given a percentile for hdr_max, detect from input histogram.
-        Level::Percentile(val) => {
-            let histogram = time_func("input histogram", || {
-                Ok(Histogram::new(&source))
-            }).unwrap();
-            histogram.percentile(val)
-        }
-    };
+        Level::Percentile(val) => input_histogram.force().percentile(val),
+    } * scale;
 
     let options = Options {
-        exposure: exposure,
+        scale: scale,
         hdr_max: hdr_max,
         saturation: args.value_of("saturation").expect("saturation arg").parse()?,
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
@@ -815,8 +829,12 @@ fn main() {
         .arg(Arg::with_name("output")
             .help("Output filename, must be .png.")
             .index(2))
+        .arg(Arg::with_name("auto-exposure")
+            .help("Input level or percentile of input data to average to re-expose to neutral 50% mid-tone on input. Default is 0.5, which passes input through unchanged.")
+            .long("auto-exposure")
+            .default_value("0.5"))
         .arg(Arg::with_name("exposure")
-            .help("Exposure adjustment in stops, used to scale the HDR input linearly. May be positive or negative; defaults to 0, which does not change the exposure.")
+            .help("Exposure adjustment in stops, applied after any auto exposure adjustment. May be positive or negative in stops; defaults to 0, which does not change the exposure.")
             .long("exposure")
             .default_value("0"))
         .arg(Arg::with_name("tone-map")
