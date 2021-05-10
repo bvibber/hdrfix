@@ -111,30 +111,24 @@ impl PixelBuffer {
         &mut self.data
     }
 
-    fn par_iter_bytes<'a>(&'a self) -> impl IndexedParallelIterator<Item = &'a [u8]> {
+    fn par_iter<'a>(&'a self) -> impl IndexedParallelIterator<Item = &'a [u8]> {
         self.data.par_chunks(self.bytes_per_pixel)
     }
 
-    fn par_iter_bytes_mut<'a>(&'a mut self) -> impl IndexedParallelIterator<Item = &'a mut [u8]> {
+    fn par_iter_mut<'a>(&'a mut self) -> impl IndexedParallelIterator<Item = &'a mut [u8]> {
         self.data.par_chunks_mut(self.bytes_per_pixel)
     }
 
-    fn par_iter_rgb<'a>(&'a self) -> impl 'a + IndexedParallelIterator<Item = Vec3>
+    fn pixels<'a>(&'a self) -> impl 'a + IndexedParallelIterator<Item = Vec3>
     {
-        self.par_iter_bytes().map(self.read_rgb_func)
-    }
-
-    fn map<'a, F>(&'a self, func: F) -> impl 'a + IndexedParallelIterator<Item = Vec3>
-    where F: (Fn(Vec3) -> Vec3) + Sync + Send + 'a
-    {
-        self.par_iter_rgb().map(func)
+        self.par_iter().map(self.read_rgb_func)
     }
 
     fn fill<T>(&mut self, source: T)
     where T: IndexedParallelIterator<Item = Vec3>
     {
         let write_rgb_func = self.write_rgb_func;
-        self.par_iter_bytes_mut()
+        self.par_iter_mut()
             .zip(source)
             .for_each(|(dest, rgb)| write_rgb_func(dest, rgb))
     }
@@ -591,8 +585,10 @@ struct Histogram {
 
 impl Histogram {
     fn new(source: &PixelBuffer) -> Self {
+        // @todo maybe do a proper histogram with buckets
+        // instead of sorting every pixel value
         let mut luma_vals = Vec::<f32>::new();
-        source.par_iter_rgb().map(luma_scrgb).collect_into_vec(&mut luma_vals);
+        source.pixels().map(luma_scrgb).collect_into_vec(&mut luma_vals);
         luma_vals.par_sort_unstable_by(|a, b| {
             match a.partial_cmp(b) {
                 Some(ordering) => ordering,
@@ -712,7 +708,7 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
         source
     } else {
         let mut dest = PixelBuffer::new(width, height, PixelFormat::HDRFloat32);
-        dest.fill(source.map(|rgb| apply_gamma(rgb, pre_gamma)));
+        dest.fill(source.pixels().map(|rgb| apply_gamma(rgb, pre_gamma)));
         dest
     };
     let post_gamma: f32 = args.value_of("post-gamma").expect("post-gamma arg").parse()?;
@@ -758,7 +754,7 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
 
     let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
     time_func("hdr_to_sdr", || {
-        Ok(tone_mapped.fill(source.map(|rgb| hdr_to_sdr_pixel(rgb, &options))))
+        Ok(tone_mapped.fill(source.pixels().map(|rgb| hdr_to_sdr_pixel(rgb, &options))))
     })?;
 
     // apply histogram expansion and color gamut correction to output
@@ -770,7 +766,7 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
 
     let mut dest = PixelBuffer::new(width, height, SDR8bit);
     time_func("output mapping", || {
-        Ok(dest.fill(tone_mapped.map(|rgb| {
+        Ok(dest.fill(tone_mapped.pixels().map(|rgb| {
             // We have to color map again
             // in case the histogram pushed things back out of gamut.
             clip((options.color_map)(apply_levels(rgb, levels_min, levels_max, post_gamma)))
