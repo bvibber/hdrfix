@@ -1,6 +1,6 @@
 convert() {
     cargo run --release -- \
-        --auto-exposure=99.9% \
+        --exposure=-1.5 \
         --hdr-max=99.9% \
         samples/"$1"-hdr.jxr \
         samples/"$1"-sdr.jpg
@@ -13,6 +13,8 @@ convert green
 convert ikea
 convert newyork
 convert oregon
+convert overcast1
+convert overcast2
 convert panel
 convert portland
 convert sanfran

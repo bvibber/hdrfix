@@ -7,6 +7,8 @@ call :convert green
 call :convert ikea
 call :convert newyork
 call :convert oregon
+call :convert overcast1
+call :convert overcast2
 call :convert panel
 call :convert portland
 call :convert sanfran
@@ -20,7 +22,7 @@ exit /b %ERRORLEVEL%
 :convert
 
 cargo run --release -- ^
-    --auto-exposure=99.9%% ^
+    --exposure=-1.5 ^
     --hdr-max=99.9%% ^
     samples\%1-hdr.jxr ^
     samples\%1-sdr.jpg
