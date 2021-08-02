@@ -6,6 +6,8 @@ Outputs files as regular SDR (standard dynamic range) PNGs in bog-standard sRGB 
 
 JPEG XR conversion is done with the `jpegxr` crate, which wraps Microsoft's BSD-licensed JPEG XR codec.
 
+Also works with 16-bit float input as saved from the Windows Game Bar now, however this is less tested.
+
 # Author, repo, etc
 
 * Brion Vibber `<brion @ pobox.com>`
@@ -24,6 +26,7 @@ JPEG XR conversion is done with the `jpegxr` crate, which wraps Microsoft's BSD-
 * jpegxr for the JPEG XR C libray (and through it, bindgen and cc)
 * oklab for perceptual color modifications
 * mozjpeg for writing output JPEG
+* half for reading 16-bit float input
 
 # Installation
 

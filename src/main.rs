@@ -28,6 +28,9 @@ type Result<T> = std::result::Result<T, LocalError>;
 // Color fun
 use oklab::{Oklab, linear_srgb_to_oklab, oklab_to_linear_srgb};
 
+// 16-bit floats
+use half::prelude::*;
+
 #[derive(Copy, Clone, Debug)]
 enum Level {
     Scalar(f32),
@@ -56,6 +59,7 @@ struct Options {
 enum PixelFormat {
     SDR8bit,
     HDR8bit,
+    HDRFloat16,
     HDRFloat32,
 }
 use PixelFormat::*;
@@ -77,16 +81,19 @@ impl PixelBuffer {
     fn new(width: usize, height: usize, format: PixelFormat) -> Self {
         let bytes_per_pixel = match format {
             SDR8bit | HDR8bit => 3,
+            HDRFloat16 => 8,
             HDRFloat32 => 16,
         };
         let read_rgb_func = match format {
             SDR8bit => read_srgb_rgb24,
             HDR8bit => read_rec2100_rgb24,
+            HDRFloat16 => read_scrgb_rgb64half,
             HDRFloat32 => read_scrgb_rgb128float
         };
         let write_rgb_func = match format {
             SDR8bit => write_srgb_rgb24,
             HDR8bit => write_rec2100_rgb24,
+            HDRFloat16 => write_scrgb_rgb64half,
             HDRFloat32 => write_scrgb_rgb128float
         };
         let stride = width * bytes_per_pixel;
@@ -157,6 +164,28 @@ fn read_rec2100_rgb24(data: &[u8]) -> Vec3 {
 
 fn write_rec2100_rgb24(_data: &mut [u8], _rgb: Vec3) {
     panic!("not yet implemented");
+}
+
+fn read_scrgb_rgb64half(data: &[u8]) -> Vec3 {
+    let data_ref_f16: &f16 = unsafe {
+        std::mem::transmute(&data[0])
+    };
+    let data_f16 = unsafe {
+        std::slice::from_raw_parts(data_ref_f16, data.len())
+    };
+    Vec3::new(data_f16[0].to_f32(), data_f16[1].to_f32(), data_f16[2].to_f32())
+}
+
+fn write_scrgb_rgb64half(data: &mut [u8], rgb: Vec3) {
+    let data_ref_f16: &mut f16 = unsafe {
+        std::mem::transmute(&mut data[0])
+    };
+    let data_f16 = &mut unsafe {
+        std::slice::from_raw_parts_mut(data_ref_f16, data.len())
+    };
+    data_f16[0] = f16::from_f32(rgb.x);
+    data_f16[1] = f16::from_f32(rgb.y);
+    data_f16[2] = f16::from_f32(rgb.z);
 }
 
 fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
@@ -261,18 +290,26 @@ fn read_jxr(filename: &Path)
     let input = File::open(filename)?;
     let mut decoder = ImageDecode::with_reader(input)?;
 
-    let format = decoder.get_pixel_format()?;
-    if format != PixelFormat128bppRGBAFloat {
-        return Err(UnsupportedPixelFormat);
-    }
-
     let (width, height) = decoder.get_size()?;
-    let bytes_per_pixel = 16;
+    let format = decoder.get_pixel_format()?;
+    let (bytes_per_pixel, buf_fmt) = match format {
+        PixelFormat128bppRGBAFloat => {
+            (16, HDRFloat32)
+        },
+        PixelFormat64bppRGBAHalf => {
+            (8, HDRFloat16)
+        },
+        _ => {
+            println!("Pixel format: {:?}", format);
+            return Err(UnsupportedPixelFormat);
+        }
+    };
+
     let stride = width as usize * bytes_per_pixel;
     let mut buffer = PixelBuffer::new(
         width as usize,
         height as usize,
-        HDRFloat32
+        buf_fmt
     );
 
     let rect = Rect::new(0, 0, width, height);
