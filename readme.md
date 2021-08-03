@@ -75,11 +75,18 @@ Adjustable parmeters:
 * `--levels-max` sets the maximum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Brighter colors will be flattened to white in output. Defaults to `1`.
 * `--watch=P` watches a folder path for new `*.jxr` files and converts them to SDR `*-sdr.jpg` files.
 
+# Recommended settings
+
+I'm currently using these settings for converting screenshots from Microsoft Flight Simulator, which look nice so far. Still tuning it up:
+
+* `--exposure=-2`
+* `--pre-gamma=2`
+* `--saturation=8`
+* `--post-gamma=0.5`
+
 # Todo / roadmap
 
 Definitely/short-term:
-* auto-output-filename feature to make it easier to use on live folders
-* add JPEG output
 * add compression params for JPEG output
 
 Maybe/later/no rush:

@@ -1,7 +1,9 @@
 convert() {
     cargo run --release -- \
-        --exposure=-1.5 \
-        --hdr-max=99.9% \
+        --exposure=-2 \
+        --pre-gamma=2 \
+        --saturation=8 \
+        --post-gamma=0.5 \
         samples/"$1"-hdr.jxr \
         samples/"$1"-sdr.jpg
 }
