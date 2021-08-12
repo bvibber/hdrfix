@@ -81,8 +81,9 @@ I'm currently using these settings for converting screenshots from Microsoft Fli
 
 * `--exposure=-2`
 * `--pre-gamma=2`
-* `--saturation=8`
+* `--saturation=1.5`
 * `--post-gamma=0.5`
+* `--color-map=clip`
 
 # Todo / roadmap
 
