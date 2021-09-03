@@ -528,6 +528,66 @@ fn color_desat_oklab(c_in: Vec3) -> Vec3
     }
 }
 
+// https://64.github.io/tonemapping/#uncharted-2
+// Uncharted 2 / Hable Filmic
+fn uncharted2_tonemap_partial(x: Vec3) -> Vec3
+{
+    const A: f32 = 0.15;
+    const B: f32 = 0.50;
+    const C: f32 = 0.10;
+    const D: f32 = 0.20;
+    const E: f32 = 0.02;
+    const F: f32 = 0.30;
+    ((x*(A*x+Vec3::splat(C*B))+Vec3::splat(D*E))/(x*(A*x+Vec3::splat(B))+Vec3::splat(D*F)))-Vec3::splat(E/F)
+}
+
+fn tonemap_uncharted2(v: Vec3, _options: &Options) -> Vec3
+{
+    let exposure_bias: f32 = 2.0;
+    let curr = uncharted2_tonemap_partial(v * exposure_bias);
+
+    let w: Vec3 = Vec3::splat(11.2);
+    let white_scale = Vec3::ONE / uncharted2_tonemap_partial(w);
+    curr * white_scale
+}
+
+// https://64.github.io/tonemapping/#aces
+// ACES (Academy Color Encoding System)
+const ACES_INPUT_MATRIX: [[f32; 3]; 3] =
+[
+    [0.59719, 0.35458, 0.04823],
+    [0.07600, 0.90834, 0.01566],
+    [0.02840, 0.13383, 0.83777]
+];
+
+const ACES_OUTPUT_MATRIX: [[f32; 3]; 3] =
+[
+    [1.60475, -0.53108, -0.07367],
+    [-0.10208, 1.10813, -0.00605],
+    [-0.00327, -0.07276, 1.07602]
+];
+
+fn aces_mul(m: &[[f32; 3]; 3], v: Vec3) -> Vec3
+{
+    let x = m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2];
+    let y = m[1][0] * v[1] + m[1][1] * v[1] + m[1][2] * v[2];
+    let z = m[2][0] * v[1] + m[2][1] * v[1] + m[2][2] * v[2];
+    Vec3::new(x, y, z)
+}
+
+fn aces_rtt_and_odt_fit(v: Vec3) -> Vec3
+{
+    let a = v * (v + Vec3::splat(0.0245786)) - Vec3::splat(0.000090537);
+    let b = v * (Vec3::splat(0.983729) * v + Vec3::splat(0.4329510)) + Vec3::splat(0.238081);
+    a / b
+}
+
+fn tonemap_aces(c_in: Vec3, _options: &Options) -> Vec3 {
+    let v = aces_mul(&ACES_INPUT_MATRIX, c_in);
+    let v = aces_rtt_and_odt_fit(v);
+    aces_mul(&ACES_OUTPUT_MATRIX, v)
+}
+
 fn linear_to_srgb(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
     let min = Vec3::splat(0.0031308);
@@ -777,6 +837,8 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
             "linear" => tonemap_linear,
             "reinhard" => tonemap_reinhard_oklab,
             "reinhard-rgb" => tonemap_reinhard_rgb,
+            "aces" => tonemap_aces,
+            "uncharted2" => tonemap_uncharted2,
             _ => unreachable!("bad tone-map option")
         },
         color_map: match args.value_of("color-map").expect("color-map arg") {
@@ -873,7 +935,7 @@ fn main() {
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard", "reinhard-rgb"])
+            .possible_values(&["linear", "reinhard", "reinhard-rgb", "aces", "uncharted2"])
             .default_value("reinhard"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level for Reinhard algorithm, in nits or a percentile to be calculated from input data. The default is 100%, which represents the highest input value.")
@@ -895,7 +957,7 @@ fn main() {
             .help("Method for mapping and fixing out of gamut colors.")
             .long("color-map")
             .possible_values(&["clip", "darken", "desaturate"])
-            .default_value("desaturate"))
+            .default_value("clip"))
         .arg(Arg::with_name("pre-gamma")
             .help("Gamma power applied on input.")
             .long("pre-gamma")

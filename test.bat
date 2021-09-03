@@ -22,10 +22,9 @@ exit /b %ERRORLEVEL%
 :convert
 
 cargo run --release -- ^
-    --exposure=-4 ^
-    --pre-gamma=2 ^
-    --saturation=1.5 ^
-    --post-gamma=0.5 ^
+    --pre-gamma=0.85 ^
+    --exposure=-1 ^
+    --tone-map=aces ^
     --color-map=clip ^
     samples\%1-hdr.jxr ^
     samples\%1-sdr.jpg

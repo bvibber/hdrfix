@@ -1,7 +1,8 @@
 convert() {
     cargo run --release -- \
-        --exposure=-4 \
         --pre-gamma=2 \
+        --exposure=-4 \
+        --tone-map=reinhard \
         --saturation=1.5 \
         --post-gamma=0.5 \
         --color-map=clip \
