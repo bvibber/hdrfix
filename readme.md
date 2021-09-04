@@ -65,14 +65,16 @@ hdrfix --help
 Adjustable parmeters:
 * `--auto-exposure=N` percentile of input signal to average to re-scale input to neutral mid-tone. Default is `0.5`, which passes through input unchanged.
 * `--exposure=N` adjusts the input signal by the desired number of f-stops up or down. The default is `0`, passing through the original signal.
+* `--pre-levels-min` sets the 0 point for input luminance, in either absolute units or as a percentile `0%`..`100%`. Defaults to `0`.
+* `--pre-levels-max` sets 1.0 point for input luminance, in either absolute units or as a percentile `0%`..`100%`. Brighter colors will be retained if using tone-mapping. Defaults to `1`.
 * `--pre-gamma-N` applies an exponential gamma curve to the input after scaling. The default is `1.0`, passing through the original signal.
-* `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `reinhard` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better but can lead to out of gamut colors needing to be corrected; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `reinhard`.
+* `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `reinhard` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better but can lead to out of gamut colors needing to be corrected; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `reinhard`. Also available are `aces` and `uncharted2` filmic algorithms.
 * `--hdr-max=N` sets the maximum luminance level for the Reinhard tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of slightly poorer contrast in highlights. The default is `100%` which checks for the brightest value from the image. A lower value will cause very bright details to blow out, but slightly lighten dark areas. Set as either a luminance in nits or a percentile of the input data.
 * `--saturation=N` sets a coefficient for determining how fast desaturation occurs in Reinhard tone mapping. The default is `1` which does not desaturate.
 * `--post-gamma-N` applies an exponential gamma curve to the output after tone mapping. The default is `1.0`, passing through the original signal.
 * `--color-map=A` sets the color-mapping algorithm for out of gamut colors after tone-mapping. Choices are `clip` which can alter color and brightness, `darken` which can cause major shifts in relative contrast but preserves color precisely, or `desaturate` which preserves luminance but desaturates color as necessary to fit in gamut. Deafult is `desaturate`.
-* `--levels-min` sets the minimum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Darker colors will be flattened to black in output. Defaults to `0`.
-* `--levels-max` sets the maximum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Brighter colors will be flattened to white in output. Defaults to `1`.
+* `--post-levels-min` sets the minimum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Darker colors will be flattened to black in output. Defaults to `0`.
+* `--post-levels-max` sets the maximum output luminance level to retain, in either absolute `0`..`1` units or as a percentile `0%`..`100%`. Brighter colors will be flattened to white in output. Defaults to `1`.
 * `--watch=P` watches a folder path for new `*.jxr` files and converts them to SDR `*-sdr.jpg` files.
 
 # Recommended settings

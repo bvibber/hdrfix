@@ -51,8 +51,6 @@ struct Options {
     hdr_max: f32,
     saturation: f32,
     tone_map: fn(Vec3, &Options) -> Vec3,
-    levels_min: Level,
-    levels_max: Level,
     color_map: fn(Vec3) -> Vec3,
 }
 
@@ -583,17 +581,29 @@ fn aces_rtt_and_odt_fit(v: Vec3) -> Vec3
 }
 
 fn tonemap_aces(c_in: Vec3, _options: &Options) -> Vec3 {
-    let v = aces_mul(&ACES_INPUT_MATRIX, c_in);
+    let v = c_in;
+    let v = aces_mul(&ACES_INPUT_MATRIX, v);
     let v = aces_rtt_and_odt_fit(v);
-    aces_mul(&ACES_OUTPUT_MATRIX, v)
+    let v = aces_mul(&ACES_OUTPUT_MATRIX, v);
+    v
 }
+
+/*
+fn srgb_to_linear(val: Vec3) -> Vec3 {
+    Vec3::select(
+        val.cmple(Vec3::splat(0.04045)),
+        val / Vec3::splat(12.92),
+        ((val + Vec3::splat(0.055)) / Vec3::splat(1.055)).powf(2.4)
+    )
+}
+*/
 
 fn linear_to_srgb(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
     let min = Vec3::splat(0.0031308);
     let linear = val * Vec3::splat(12.92);
     let gamma = (val * Vec3::splat(1.055)).powf(1.0 / 2.4) - Vec3::splat(0.055);
-    clip(Vec3::select(val.cmple(min), linear, gamma))
+    Vec3::select(val.cmple(min), linear, gamma)
 }
 
 const REC2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
@@ -742,14 +752,6 @@ fn apply_levels(c_in: Vec3, level_min: f32, level_max: f32, gamma: f32) -> Vec3 
     oklab_to_scrgb(oklab_out)
 }
 
-fn apply_gamma(c_in: Vec3, gamma: f32) -> Vec3 {
-    let oklab_in = scrgb_to_oklab(c_in);
-    let luma_in = luma_oklab(oklab_in);
-    let luma_out = luma_in.powf(gamma);
-    let oklab_out = scale_oklab(oklab_in, luma_out);
-    oklab_to_scrgb(oklab_out)
-}
-
 struct Lazy<T, F> where F: (FnOnce() -> T) {
     value: Option<T>,
     func: Option<F>,
@@ -801,14 +803,15 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
     let height = source.height as usize;
 
     let pre_gamma: f32 = args.value_of("pre-gamma").expect("pre-gamma arg").parse()?;
-    let source = if pre_gamma == 1.0 {
-        source
-    } else {
+    let mut pre_histogram = Lazy::new(|| Histogram::new(&source));
+    let pre_levels_min = pre_histogram.level(Level::with_str(args.value_of("pre-levels-min").expect("pre-levels-min arg"))?);
+    let pre_levels_max = pre_histogram.level(Level::with_str(args.value_of("pre-levels-max").expect("pre-levels-max arg"))?);
+    let source = {
         let mut dest = PixelBuffer::new(width, height, PixelFormat::HDRFloat32);
-        dest.fill(source.pixels().map(|rgb| apply_gamma(rgb, pre_gamma)));
+        dest.fill(source.pixels().map(|rgb| apply_levels(rgb, pre_levels_min, pre_levels_max, pre_gamma)));
         dest
     };
-    let post_gamma: f32 = args.value_of("post-gamma").expect("post-gamma arg").parse()?;
+
 
     let mut input_histogram = Lazy::new(|| time_func("input histogram", || {
         Ok(Histogram::new(&source))
@@ -847,8 +850,6 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
             "desaturate" => color_desat_oklab,
             _ => unreachable!("bad color-map option")
         },
-        levels_min: Level::with_str(args.value_of("levels-min").expect("levels-min arg"))?,
-        levels_max: Level::with_str(args.value_of("levels-max").expect("levels-max arg"))?,
     };
 
     let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
@@ -860,15 +861,16 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
     let mut lazy_histogram = Lazy::new(|| {
         time_func("levels histogram", || Ok(Histogram::new(&tone_mapped))).unwrap()
     });
-    let levels_min = lazy_histogram.level(options.levels_min);
-    let levels_max = lazy_histogram.level(options.levels_max);
+    let post_levels_min = lazy_histogram.level(Level::with_str(args.value_of("post-levels-min").expect("post-levels-min arg"))?);
+    let post_levels_max = lazy_histogram.level(Level::with_str(args.value_of("post-levels-max").expect("post-levels-max arg"))?);
+    let post_gamma: f32 = args.value_of("post-gamma").expect("post-gamma arg").parse()?;
 
     let mut dest = PixelBuffer::new(width, height, SDR8bit);
     time_func("output mapping", || {
         Ok(dest.fill(tone_mapped.pixels().map(|rgb| {
             // We have to color map again
             // in case the histogram pushed things back out of gamut.
-            clip((options.color_map)(apply_levels(rgb, levels_min, levels_max, post_gamma)))
+            clip((options.color_map)(apply_levels(rgb, post_levels_min, post_levels_max, post_gamma)))
         })))
     })?;
 
@@ -945,14 +947,6 @@ fn main() {
             .help("Coefficient for how to scale saturation in tone mapping. 1.0 will desaturate linearly to the compression ratio; smaller values will desaturate more aggressively.")
             .long("saturation")
             .default_value("1"))
-        .arg(Arg::with_name("levels-min")
-            .help("Minimum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
-            .long("levels-min")
-            .default_value("0.0"))
-        .arg(Arg::with_name("levels-max")
-            .help("Maximum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
-            .long("levels-max")
-            .default_value("1.0"))
         .arg(Arg::with_name("color-map")
             .help("Method for mapping and fixing out of gamut colors.")
             .long("color-map")
@@ -962,9 +956,25 @@ fn main() {
             .help("Gamma power applied on input.")
             .long("pre-gamma")
             .default_value("1.0"))
+        .arg(Arg::with_name("pre-levels-min")
+            .help("Minimum input level to normalize to 0 when expanding input for processing. May be an absolute value in -infinity..infinity range or a percentile from 0% to 100%.")
+            .long("pre-levels-min")
+            .default_value("0.0"))
+        .arg(Arg::with_name("pre-levels-max")
+            .help("Maximum input level to normalize to 1 when expanding input for processing. May be an absolute value in -infinity..infinity range or a percentile from 0% to 100%.")
+            .long("pre-levels-max")
+            .default_value("1.0"))
         .arg(Arg::with_name("post-gamma")
             .help("Gamma power applied on output.")
             .long("post-gamma")
+            .default_value("1.0"))
+        .arg(Arg::with_name("post-levels-min")
+            .help("Minimum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
+            .long("post-levels-min")
+            .default_value("0.0"))
+        .arg(Arg::with_name("post-levels-max")
+            .help("Maximum output level to save when expanding final SDR output for saving. May be an absolute value in 0..1 range or a percentile from 0% to 100%.")
+            .long("post-levels-max")
             .default_value("1.0"))
         .arg(Arg::with_name("watch")
             .help("Watch a folder and convert any *.jxr files that appear into *-sdr.jpg versions. Provide a folder name.")
