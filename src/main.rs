@@ -259,12 +259,13 @@ fn read_png(filename: &Path)
     let mut decoder = Decoder::new(File::open(filename)?);
     decoder.set_transformations(Transformations::IDENTITY);
 
-    let (info, mut reader) = decoder.read_info()?;
+    let mut reader = decoder.read_info()?;
+    let info = reader.info();
 
     if info.bit_depth != png::BitDepth::Eight {
         return Err(PNGFormatError);
     }
-    if info.color_type != png::ColorType::RGB {
+    if info.color_type != png::ColorType::Rgb {
         return Err(PNGFormatError);
     }
 
