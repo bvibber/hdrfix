@@ -30,6 +30,11 @@ Also works with 16-bit float input as saved from the Windows Game Bar now, howev
 
 # Installation
 
+From binary release download:
+* download the latest release from https://github.com/brion/hdrfix/releases
+* copy `hdrfix.exe` and (optionally) `watch.bat` into a desired directory
+* for instance, `C:\Users\<Yourname>\Videos\Microsoft Flight Simulator`
+
 From source checkout:
 
 ```
@@ -56,6 +61,8 @@ Watching a folder, converting all newly-added `*.jxr` files to `*-sdr.jpg`:
 hdrfix --watch=.
 ```
 
+Note that an example Windows batch file `watch.bat` is included with settings for Flight Simulator screenshots, using this mode.
+
 Interactive help!
 
 ```
@@ -81,8 +88,8 @@ Adjustable parmeters:
 
 I'm currently using these settings for converting screenshots from Microsoft Flight Simulator, which look nice so far. Still tuning it up:
 
-* `--exposure=-2`
 * `--pre-gamma=2`
+* `--exposure=-4`
 * `--saturation=1.5`
 * `--post-gamma=0.5`
 * `--color-map=clip`
