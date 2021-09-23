@@ -1,3 +1,5 @@
+#![warn(clippy::all)]
+
 use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fs::File;
@@ -39,7 +41,7 @@ enum Level {
 
 impl Level {
     fn with_str(source: &str) -> Result<Self> {
-        match source.strip_suffix("%") {
+        match source.strip_suffix('%') {
             Some(val) => Ok(Self::Percentile(val.parse()?)),
             None => Ok(Self::Scalar(source.parse::<f32>()?)),
         }
@@ -96,15 +98,15 @@ impl PixelBuffer {
         };
         let stride = width * bytes_per_pixel;
         let size = stride * height;
-        let mut data = Vec::<u8>::with_capacity(size);
-        data.resize(size, 0);
+        let data = vec![0u8; size];
+
         PixelBuffer {
-            width: width,
-            height: height,
-            bytes_per_pixel: bytes_per_pixel,
-            data: data,
-            read_rgb_func: read_rgb_func,
-            write_rgb_func: write_rgb_func
+            width,
+            height,
+            bytes_per_pixel,
+            data,
+            read_rgb_func,
+            write_rgb_func
         }
     }
 
@@ -116,15 +118,15 @@ impl PixelBuffer {
         &mut self.data
     }
 
-    fn par_iter<'a>(&'a self) -> impl IndexedParallelIterator<Item = &'a [u8]> {
+    fn par_iter(&self) -> impl IndexedParallelIterator<Item = &[u8]> {
         self.data.par_chunks(self.bytes_per_pixel)
     }
 
-    fn par_iter_mut<'a>(&'a mut self) -> impl IndexedParallelIterator<Item = &'a mut [u8]> {
+    fn par_iter_mut(&mut self) -> impl IndexedParallelIterator<Item = &mut [u8]> {
         self.data.par_chunks_mut(self.bytes_per_pixel)
     }
 
-    fn pixels<'a>(&'a self) -> impl 'a + IndexedParallelIterator<Item = Vec3>
+    fn pixels(&self) -> impl '_ + IndexedParallelIterator<Item = Vec3>
     {
         self.par_iter().map(self.read_rgb_func)
     }
@@ -319,10 +321,10 @@ fn read_jxr(filename: &Path)
 
 fn pq_to_linear(val: Vec3) -> Vec3 {
     // fixme make sure all the splats are efficient constants
-    let inv_m1: f32 = 1.0 / 0.1593017578125;
+    let inv_m1: f32 = 1.0 / 0.15930176;
     let inv_m2: f32 = 1.0 / 78.84375;
     let c1 = Vec3::splat(0.8359375);
-    let c2 = Vec3::splat(18.8515625);
+    let c2 = Vec3::splat(18.851563);
     let c3 = Vec3::splat(18.6875);
     let val_powered = val.powf(inv_m2);
     (Vec3::max(val_powered - c1, Vec3::ZERO)
@@ -367,8 +369,7 @@ fn tonemap_reinhard_rgb(c_in: Vec3, options: &Options) -> Vec3 {
     // possible cause some color shift.
     let white = options.hdr_max;
     let white2 = white * white;
-    let c_out = c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in);
-    c_out
+    c_in * (Vec3::ONE + c_in / white2) / (Vec3::ONE + c_in)
 }
 
 fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
@@ -566,6 +567,7 @@ const ACES_OUTPUT_MATRIX: [[f32; 3]; 3] =
     [-0.00327, -0.07276, 1.07602]
 ];
 
+#[allow(clippy::many_single_char_names)]
 fn aces_mul(m: &[[f32; 3]; 3], v: Vec3) -> Vec3
 {
     let x = m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2];
@@ -577,7 +579,7 @@ fn aces_mul(m: &[[f32; 3]; 3], v: Vec3) -> Vec3
 fn aces_rtt_and_odt_fit(v: Vec3) -> Vec3
 {
     let a = v * (v + Vec3::splat(0.0245786)) - Vec3::splat(0.000090537);
-    let b = v * (Vec3::splat(0.983729) * v + Vec3::splat(0.4329510)) + Vec3::splat(0.238081);
+    let b = v * (Vec3::splat(0.983729) * v + Vec3::splat(0.432951)) + Vec3::splat(0.238081);
     a / b
 }
 
@@ -585,8 +587,7 @@ fn tonemap_aces(c_in: Vec3, _options: &Options) -> Vec3 {
     let v = c_in;
     let v = aces_mul(&ACES_INPUT_MATRIX, v);
     let v = aces_rtt_and_odt_fit(v);
-    let v = aces_mul(&ACES_OUTPUT_MATRIX, v);
-    v
+    aces_mul(&ACES_OUTPUT_MATRIX, v)
 }
 
 /*
@@ -617,11 +618,9 @@ fn exposure_scale(stops: f32) -> f32
 
 fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
 {
-    let mut val = rgb_scrgb;
-    val = val * options.scale;
-    val = (options.tone_map)(val, &options);
-    val = (options.color_map)(val);
-    val
+    let val = rgb_scrgb * options.scale;
+    let val = (options.tone_map)(val, options);
+    (options.color_map)(val)
 }
 
 fn write_png(filename: &Path, data: &PixelBuffer)
@@ -704,7 +703,7 @@ impl Histogram {
             }
         });
         Self {
-            luma_vals: luma_vals,
+            luma_vals
         }
     }
 
@@ -834,8 +833,8 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
     } * scale;
 
     let options = Options {
-        scale: scale,
-        hdr_max: hdr_max,
+        scale,
+        hdr_max,
         saturation: args.value_of("saturation").expect("saturation arg").parse()?,
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
             "linear" => tonemap_linear,
@@ -855,7 +854,8 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
 
     let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
     time_func("hdr_to_sdr", || {
-        Ok(tone_mapped.fill(source.pixels().map(|rgb| hdr_to_sdr_pixel(rgb, &options))))
+        tone_mapped.fill(source.pixels().map(|rgb| hdr_to_sdr_pixel(rgb, &options)));
+        Ok(())
     })?;
 
     // apply histogram expansion and color gamut correction to output
@@ -868,11 +868,12 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
 
     let mut dest = PixelBuffer::new(width, height, SDR8bit);
     time_func("output mapping", || {
-        Ok(dest.fill(tone_mapped.pixels().map(|rgb| {
+        dest.fill(tone_mapped.pixels().map(|rgb| {
             // We have to color map again
             // in case the histogram pushed things back out of gamut.
             clip((options.color_map)(apply_levels(rgb, post_levels_min, post_levels_max, post_gamma)))
-        })))
+        }));
+        Ok(())
     })?;
 
     time_func("write output", || {
@@ -884,7 +885,7 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
         }
     })?;
 
-    return Ok(());
+    Ok(())
 }
 
 fn run(args: &ArgMatches) -> Result<()> {
