@@ -46,9 +46,9 @@ checksum = "23b62fc65de8e4e7f52534fb52b0f3ed04746ae267519eef2a83941e8085068b"
 
 [[package]]
 name = "arrayvec"
-version = "0.7.0"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a2f58b0bb10c380af2b26e57212856b8c9a59e0925b4c20f4a174a49734eaf7"
+checksum = "be4dc07131ffa69b8072d35f5007352af944213cde02545e2103680baed38fcd"
 
 [[package]]
 name = "atty"
@@ -116,9 +116,9 @@ checksum = "14c189c53d098945499cdfa7ecc63567cf3886b3332b312a5b4585d8d3a6a610"
 
 [[package]]
 name = "cc"
-version = "1.0.67"
+version = "1.0.70"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e3c69b077ad434294d3ce9f1f6143a2a4b89a8a2d54ef813d85003a4fd1137fd"
+checksum = "d26a6ce4b6a484fa3edb70f7efa6fc430fd2b87285fe8b84304fd0936faa0dc0"
 dependencies = [
  "jobserver",
 ]
@@ -260,9 +260,9 @@ dependencies = [
 
 [[package]]
 name = "dunce"
-version = "1.0.1"
+version = "1.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b2641c4a7c0c4101df53ea572bffdc561c146f6c2eb09e4df02bc4811e3feeb4"
+checksum = "453440c271cf5577fd2a40e4942540cb7d0d2f85e27c8d07dd0023c925a67541"
 
 [[package]]
 name = "either"
@@ -381,7 +381,7 @@ dependencies = [
 
 [[package]]
 name = "hdrfix"
-version = "1.0.0"
+version = "1.0.1"
 dependencies = [
  "clap",
  "glam",
@@ -638,11 +638,11 @@ dependencies = [
 
 [[package]]
 name = "mozjpeg"
-version = "0.9.0"
+version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e6badd998b8ea1df4c8f02f5b532d7bf176ac2d8e0b794f252d52a6cd02e8d3"
+checksum = "2331118f5be2fbf28b9bc79cf720fb92470215cfc5d45a9f07cb24cae301b04e"
 dependencies = [
- "arrayvec 0.7.0",
+ "arrayvec 0.7.1",
  "fallible_collections",
  "libc",
  "mozjpeg-sys",
@@ -651,9 +651,9 @@ dependencies = [
 
 [[package]]
 name = "mozjpeg-sys"
-version = "0.12.3"
+version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f9d8d49c2d77aee21ab92a31e03b2a652f90931151f11bfdefadcf25e4fd525"
+checksum = "8d2d207e7338a9a58abfc8a9d247bc9cc42a1b3eaa0a4e7014272825a00015a2"
 dependencies = [
  "cc",
  "dunce",
@@ -707,9 +707,9 @@ dependencies = [
 
 [[package]]
 name = "notify"
-version = "4.0.16"
+version = "4.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2599080e87c9bd051ddb11b10074f4da7b1223298df65d4c2ec5bcf309af1533"
+checksum = "ae03c8c853dba7bfd23e571ff0cff7bc9dceb40a4cd684cd1681824183f45257"
 dependencies = [
  "bitflags",
  "filetime",
@@ -839,9 +839,9 @@ dependencies = [
 
 [[package]]
 name = "rayon"
-version = "1.5.0"
+version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b0d8e0819fadc20c74ea8373106ead0600e3a67ef1fe8da56e39b9ae7275674"
+checksum = "c06aca804d41dbc8ba42dfd964f0d01334eceb64314b9ecf7c5fad5188a06d90"
 dependencies = [
  "autocfg",
  "crossbeam-deque",
@@ -851,9 +851,9 @@ dependencies = [
 
 [[package]]
 name = "rayon-core"
-version = "1.9.0"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9ab346ac5921dc62ffa9f89b7a773907511cdfa5490c572ae9be1be33e8afa4a"
+checksum = "d78120e2c850279833f1dd3582f730c4ab53ed95aeaaaa862a2a5c71b1656d8e"
 dependencies = [
  "crossbeam-channel",
  "crossbeam-deque",
@@ -973,18 +973,18 @@ dependencies = [
 
 [[package]]
 name = "thiserror"
-version = "1.0.24"
+version = "1.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e0f4a65597094d4483ddaed134f409b2cb7c1beccf25201a9f73c719254fa98e"
+checksum = "602eca064b2d83369e2b2f34b09c70b605402801927c65c11071ac911d299b88"
 dependencies = [
  "thiserror-impl",
 ]
 
 [[package]]
 name = "thiserror-impl"
-version = "1.0.24"
+version = "1.0.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7765189610d8241a44529806d6fd1f2e0a08734313a35d5b3a556f92b381f3c0"
+checksum = "bad553cc2c78e8de258400763a647e80e6d1b31ee237275d756f6836d204494c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1004,9 +1004,9 @@ dependencies = [
 
 [[package]]
 name = "time"
-version = "0.3.2"
+version = "0.3.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3e0a10c9a9fb3a5dce8c2239ed670f1a2569fcf42da035f5face1b19860d52b0"
+checksum = "cde1cf55178e0293453ba2cca0d5f8392a922e52aa958aee9c28ed02becc6d03"
 dependencies = [
  "libc",
 ]

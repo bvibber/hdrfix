@@ -1,6 +1,6 @@
 [package]
 name = "hdrfix"
-version = "1.0.0"
+version = "1.0.1"
 authors = ["Brion Vibber <brion@pobox.com>"]
 edition = "2018"
 description = "A tool for mapping HDR screenshots to SDR"
@@ -10,6 +10,7 @@ repository = "https://github.com/brion/hdrfix.git"
 license = "MIT"
 keywords = ["jxr", "jpegxr", "jpeg-xr", "hdr"]
 categories = ["command-line-utilities", "multimedia::images"]
+exclude = ["/samples", "/*.bat", "/*.sh"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
@@ -20,14 +21,14 @@ jpegxr = "0.2.1"
 png = "0.17.1"
 clap = "2.33.3"
 mtpng = "0.3.5"
-time = "0.3.2"
-notify = "4.0.16"
+time = "0.3.3"
+notify = "4.0.17"
 image = "0.23.14"
-mozjpeg = "0.9.0"
+mozjpeg = "0.9.1"
 
 # For the actual conversion code
 glam = "0.18.0"
-thiserror = "1.0"
-rayon = "1.5.0"
+thiserror = "1.0.29"
+rayon = "1.5.1"
 oklab = "1.0.0"
 half = { version = "1.7.1", features = [ "std", "num-traits" ] }
