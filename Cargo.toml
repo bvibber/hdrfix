@@ -3,6 +3,13 @@ name = "hdrfix"
 version = "1.0.0"
 authors = ["Brion Vibber <brion@pobox.com>"]
 edition = "2018"
+description = "A tool for mapping HDR screenshots to SDR"
+readme = "readme.md"
+homepage = "https://github.com/brion/hdrfix"
+repository = "https://github.com/brion/hdrfix.git"
+license = "MIT"
+keywords = ["jxr", "jpegxr", "jpeg-xr", "hdr"]
+categories = ["command-line-utilities", "multimedia::images"]
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
