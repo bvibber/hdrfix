@@ -1,11 +1,6 @@
 convert() {
     cargo run --release -- \
-        --pre-gamma=2 \
-        --exposure=-4 \
-        --tone-map=reinhard \
-        --saturation=1.5 \
-        --post-gamma=0.5 \
-        --color-map=clip \
+        --exposure=-1 \
         samples/"$1"-hdr.jxr \
         samples/"$1"-sdr.jpg
 }

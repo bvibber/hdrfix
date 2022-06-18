@@ -551,24 +551,27 @@ fn tonemap_uncharted2(v: Vec3, _options: &Options) -> Vec3
     curr * white_scale
 }
 
+// can't use glam's Mat3 as a constant literal?
+type Matrix3x3 = [[f32; 3]; 3];
+
 // https://64.github.io/tonemapping/#aces
 // ACES (Academy Color Encoding System)
-const ACES_INPUT_MATRIX: [[f32; 3]; 3] =
+const ACES_INPUT_MATRIX: Matrix3x3 =
 [
     [0.59719, 0.35458, 0.04823],
     [0.07600, 0.90834, 0.01566],
     [0.02840, 0.13383, 0.83777]
 ];
 
-const ACES_OUTPUT_MATRIX: [[f32; 3]; 3] =
+const ACES_OUTPUT_MATRIX: Matrix3x3 =
 [
-    [1.60475, -0.53108, -0.07367],
-    [-0.10208, 1.10813, -0.00605],
-    [-0.00327, -0.07276, 1.07602]
+    [ 1.60475, -0.53108, -0.07367],
+    [-0.10208,  1.10813, -0.00605],
+    [-0.00327, -0.07276,  1.07602]
 ];
 
 #[allow(clippy::many_single_char_names)]
-fn aces_mul(m: &[[f32; 3]; 3], v: Vec3) -> Vec3
+fn aces_mul(m: &Matrix3x3, v: Vec3) -> Vec3
 {
     let x = m[0][0] * v[0] + m[0][1] * v[1] + m[0][2] * v[2];
     let y = m[1][0] * v[1] + m[1][1] * v[1] + m[1][2] * v[2];
@@ -940,7 +943,7 @@ fn main() {
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
             .possible_values(&["linear", "reinhard", "reinhard-rgb", "aces", "uncharted2"])
-            .default_value("reinhard"))
+            .default_value("uncharted2"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level for Reinhard algorithm, in nits or a percentile to be calculated from input data. The default is 100%, which represents the highest input value.")
             .long("hdr-max")
