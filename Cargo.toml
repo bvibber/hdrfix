@@ -1,6 +1,6 @@
 [package]
 name = "hdrfix"
-version = "1.0.1"
+version = "1.0.2"
 authors = ["Brion Vibber <brion@pobox.com>"]
 edition = "2018"
 description = "A tool for mapping HDR screenshots to SDR"
