@@ -530,7 +530,7 @@ fn color_desat_oklab(c_in: Vec3) -> Vec3
 
 // https://64.github.io/tonemapping/#uncharted-2
 // Uncharted 2 / Hable Filmic
-fn uncharted2_tonemap_partial(x: Vec3) -> Vec3
+fn uncharted2_tonemap_partial(x: f32) -> f32
 {
     const A: f32 = 0.15;
     const B: f32 = 0.50;
@@ -538,17 +538,21 @@ fn uncharted2_tonemap_partial(x: Vec3) -> Vec3
     const D: f32 = 0.20;
     const E: f32 = 0.02;
     const F: f32 = 0.30;
-    ((x*(A*x+Vec3::splat(C*B))+Vec3::splat(D*E))/(x*(A*x+Vec3::splat(B))+Vec3::splat(D*F)))-Vec3::splat(E/F)
+    ((x*(A*x+(C*B))+(D*E))/(x*(A*x+(B))+(D*F)))-(E/F)
 }
 
 fn tonemap_uncharted2(v: Vec3, _options: &Options) -> Vec3
 {
     let exposure_bias: f32 = 2.0;
-    let curr = uncharted2_tonemap_partial(v * exposure_bias);
+    let in_oklab = scrgb_to_oklab(v);
+    let luma = luma_oklab(in_oklab);
+    let curr = uncharted2_tonemap_partial(luma * exposure_bias);
 
-    let w: Vec3 = Vec3::splat(11.2);
-    let white_scale = Vec3::ONE / uncharted2_tonemap_partial(w);
-    curr * white_scale
+    let w = 11.2f32;
+    let white_scale = 1.0f32 / uncharted2_tonemap_partial(w);
+    let luma_out = curr * white_scale;
+
+    oklab_to_scrgb(scale_oklab(in_oklab, luma_out))
 }
 
 // can't use glam's Mat3 as a constant literal?

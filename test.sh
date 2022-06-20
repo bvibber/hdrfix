@@ -8,6 +8,7 @@ convert() {
 convert burbank
 convert closeup
 convert cloud
+convert eagle
 convert green
 convert ikea
 convert newyork
