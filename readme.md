@@ -77,7 +77,7 @@ Adjustable parmeters:
 * `--pre-levels-min` sets the 0 point for input luminance, in either absolute units or as a percentile `0%`..`100%`. Defaults to `0`.
 * `--pre-levels-max` sets 1.0 point for input luminance, in either absolute units or as a percentile `0%`..`100%`. Brighter colors will be retained if using tone-mapping. Defaults to `1`.
 * `--pre-gamma-N` applies an exponential gamma curve to the input after scaling. The default is `1.0`, passing through the original signal.
-* `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `uncharted2` or `aces` filmic modes, or `reinhard` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better but can lead to out of gamut colors needing to be corrected; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `uncharted2`, also known as "hable" in some tools.
+* `--tone-map=A` sets the HDR to SDR tone-mapping algorithm; choices are `linear` which will clip/correct anything brighter than 1.0, or one of `hable`, `uncharted2` or `aces` filmic modes, or `reinhard` or `reinhard-rgb` which applies the Reinhard tone-mapping algorithm on either the luminance or separate RGB color channels. Luminance mode preserves colors better but can lead to out of gamut colors needing to be corrected; RGB mode will apply desaturation on brighter colors nicely but also can shift colors and alter luminance a bit. Default is `hable`, which is the same as `uncharted2` but with different luma/desaturation treatment to match ffmpeg.
 * `--hdr-max=N` sets the maximum luminance level for the Reinhard tone-mapping algorithm. Higher values will preserve more detail in very bright areas, at the cost of slightly poorer contrast in highlights. The default is `100%` which checks for the brightest value from the image. A lower value will cause very bright details to blow out, but slightly lighten dark areas. Set as either a luminance in nits or a percentile of the input data.
 * `--saturation=N` sets a coefficient for determining how fast desaturation occurs in Reinhard tone mapping. The default is `1` which does not desaturate.
 * `--post-gamma-N` applies an exponential gamma curve to the output after tone mapping. The default is `1.0`, passing through the original signal.
@@ -88,11 +88,7 @@ Adjustable parmeters:
 
 ## Recommended settings
 
-I'm currently using these settings for converting screenshots from Microsoft Flight Simulator, which look nice so far. Still tuning it up:
-
-I use the current defaults (uncharted2/hable tone mapping, then clipping to gamut), with a one-stop exposure pull because the game is a bit bright:
-
-* `--exposure=-1`
+I'm using the current default settings ("hable" tone mapping) for converting screenshots from Microsoft Flight Simulator, which look nice so far. Still tuning it up, so it may change.
 
 ## Todo / roadmap
 

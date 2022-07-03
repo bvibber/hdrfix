@@ -1,6 +1,5 @@
 convert() {
     cargo run --release -- \
-        --exposure=-1 \
         samples/"$1"-hdr.jxr \
         samples/"$1"-sdr.jpg
 }

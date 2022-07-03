@@ -528,6 +528,16 @@ fn color_desat_oklab(c_in: Vec3) -> Vec3
     }
 }
 
+fn luma_rgb(val: Vec3) -> f32 {
+    val.x * 0.2126 + val.y * 0.7152 + val.z * 0.0722
+}
+
+fn scale_rgb(val: Vec3, luma_out: f32) -> Vec3 {
+    let luma_in = luma_rgb(val);
+    let scale = luma_out / luma_in;
+    val * scale
+}
+
 // https://64.github.io/tonemapping/#uncharted-2
 // Uncharted 2 / Hable Filmic
 fn uncharted2_tonemap_partial(x: f32) -> f32
@@ -544,15 +554,37 @@ fn uncharted2_tonemap_partial(x: f32) -> f32
 fn tonemap_uncharted2(v: Vec3, _options: &Options) -> Vec3
 {
     let exposure_bias: f32 = 2.0;
-    let in_oklab = scrgb_to_oklab(v);
-    let luma = luma_oklab(in_oklab);
+    let luma = luma_rgb(v);
     let curr = uncharted2_tonemap_partial(luma * exposure_bias);
 
     let w = 11.2f32;
     let white_scale = 1.0f32 / uncharted2_tonemap_partial(w);
     let luma_out = curr * white_scale;
 
-    oklab_to_scrgb(scale_oklab(in_oklab, luma_out))
+    scale_rgb(v, luma_out)
+}
+
+fn tonemap_hable(val: Vec3, _options: &Options) -> Vec3
+{
+    // stolen from ffmpeg's vf_tonemap
+
+    // desat
+    let luma = luma_rgb(val);
+    let desaturation: f32 = 2.0;
+    let epsilon: f32 = 1e-6;
+    let overbright = f32::max(luma - desaturation, epsilon ) / f32::max(luma, epsilon);
+    let rgb_out = val * (1.0 - overbright) + luma * overbright;
+    let sig_orig = f32::max(rgb_out.max_element(), epsilon);
+
+    // hable/uncharted2
+    let exposure_bias: f32 = 2.0;
+    let luma = sig_orig;
+    let curr = uncharted2_tonemap_partial(luma * exposure_bias);
+    let w = 11.2f32;
+    let white_scale = 1.0f32 / uncharted2_tonemap_partial(w);
+    let sig = curr * white_scale;
+
+    rgb_out * (sig / sig_orig)
 }
 
 // can't use glam's Mat3 as a constant literal?
@@ -849,6 +881,7 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
             "reinhard-rgb" => tonemap_reinhard_rgb,
             "aces" => tonemap_aces,
             "uncharted2" => tonemap_uncharted2,
+            "hable" => tonemap_hable,
             _ => unreachable!("bad tone-map option")
         },
         color_map: match args.value_of("color-map").expect("color-map arg") {
@@ -946,8 +979,8 @@ fn main() {
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard", "reinhard-rgb", "aces", "uncharted2"])
-            .default_value("uncharted2"))
+            .possible_values(&["linear", "reinhard", "reinhard-rgb", "aces", "uncharted2", "hable"])
+            .default_value("hable"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level for Reinhard algorithm, in nits or a percentile to be calculated from input data. The default is 100%, which represents the highest input value.")
             .long("hdr-max")
@@ -959,7 +992,7 @@ fn main() {
         .arg(Arg::with_name("color-map")
             .help("Method for mapping and fixing out of gamut colors.")
             .long("color-map")
-            .possible_values(&["clip", "darken", "desaturate"])
+            .possible_values(&["clip", "darken", "desaturate", "desaturate-oklab"])
             .default_value("clip"))
         .arg(Arg::with_name("pre-gamma")
             .help("Gamma power applied on input.")
