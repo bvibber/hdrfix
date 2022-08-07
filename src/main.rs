@@ -692,37 +692,22 @@ fn write_jpeg(filename: &Path, data: &PixelBuffer)
    -> Result<()>
 {
     // @todo allow setting jpeg quality
-    if (cfg!(target_os="macos") || cfg!(target_os="ios")) && cfg!(target_arch="aarch64") {
-        // image crate's JPEG encoder is very slow
-        // however mozjpeg crashes on arm64 macOS as of 2021-05-09
-        use image::ColorType;
-        use image::codecs::jpeg::JpegEncoder;
-        let mut writer = File::create(filename)?;
-            let mut encoder = JpegEncoder::new_with_quality(&mut writer, 95);
-            encoder.encode(data.bytes(),
-                data.width as u32,
-                data.height as u32,
-                ColorType::Rgb8
-            )?;
-        Ok(())
-    } else {
-        // mozjpeg is much faster than image crate's encoder
-        std::panic::catch_unwind(|| {
-            use mozjpeg::{Compress, ColorSpace};
-            let mut c = Compress::new(ColorSpace::JCS_EXT_RGB);
-            c.set_size(data.width, data.height);
-            c.set_quality(95.0);
-            c.set_mem_dest(); // can't write direct to file?
-            c.start_compress();
-            if !c.write_scanlines(data.bytes()) {
-                panic!("error writing scanlines");
-            }
-            c.finish_compress();
-            let mut writer = File::create(filename).expect("error creating output file");
-            let data = c.data_as_mut_slice().expect("error accessing JPEG output buffer");
-            writer.write_all(data).expect("error writing output file");
-        }).map_err(|_| JpegWriteFailure)
-    }
+    // mozjpeg is much faster than image crate's encoder
+    std::panic::catch_unwind(|| {
+        use mozjpeg::{Compress, ColorSpace};
+        let mut c = Compress::new(ColorSpace::JCS_EXT_RGB);
+        c.set_size(data.width, data.height);
+        c.set_quality(95.0);
+        c.set_mem_dest(); // can't write direct to file?
+        c.start_compress();
+        if !c.write_scanlines(data.bytes()) {
+            panic!("error writing scanlines");
+        }
+        c.finish_compress();
+        let mut writer = File::create(filename).expect("error creating output file");
+        let data = c.data_as_mut_slice().expect("error accessing JPEG output buffer");
+        writer.write_all(data).expect("error writing output file");
+    }).map_err(|_| JpegWriteFailure)
 }
 
 struct Histogram {
