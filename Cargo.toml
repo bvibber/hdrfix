@@ -24,7 +24,8 @@ mtpng = "0.3.5"
 time = "0.3.3"
 notify = "4.0.17"
 image = "0.23.14"
-mozjpeg = "0.9.1"
+# disable nasm_simd, it breaks on Windows/arm64
+mozjpeg = { version = "0.9.4", default_features = false }
 
 # For the actual conversion code
 glam = "0.18.0"
