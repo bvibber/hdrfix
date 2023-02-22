@@ -19,7 +19,7 @@ exclude = ["/samples", "/*.bat", "/*.sh"]
 # todo: make optional
 jpegxr = "0.2.1"
 png = "0.17.1"
-clap = "2.33.3"
+clap = { version = "4.1.6", features = [ "derive" ] }
 mtpng = "0.3.5"
 time = "0.3.3"
 notify = "4.0.17"
