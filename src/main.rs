@@ -733,7 +733,7 @@ impl Histogram {
 
     fn percentile(&self, target: f32) -> f32 {
         let max_index = self.luma_vals.len() - 1;
-        let target_index = (max_index as f32 * target / 100.0) as usize;
+        let target_index = (max_index as f64 * target as f64 / 100.0) as usize;
         self.luma_vals[target_index]
     }
 
