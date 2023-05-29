@@ -59,6 +59,7 @@ struct Options {
 enum PixelFormat {
     SDR8bit,
     HDR8bit,
+    HDR16bit,
     HDRFloat16,
     HDRFloat32,
 }
@@ -81,18 +82,21 @@ impl PixelBuffer {
     fn new(width: usize, height: usize, format: PixelFormat) -> Self {
         let bytes_per_pixel = match format {
             SDR8bit | HDR8bit => 3,
+            HDR16bit => 6,
             HDRFloat16 => 8,
             HDRFloat32 => 16,
         };
         let read_rgb_func = match format {
             SDR8bit => read_srgb_rgb24,
             HDR8bit => read_rec2100_rgb24,
+            HDR16bit => read_rec2100_rgb48,
             HDRFloat16 => read_scrgb_rgb64half,
             HDRFloat32 => read_scrgb_rgb128float
         };
         let write_rgb_func = match format {
             SDR8bit => write_srgb_rgb24,
             HDR8bit => write_rec2100_rgb24,
+            HDR16bit => write_rec2100_rgb48,
             HDRFloat16 => write_scrgb_rgb64half,
             HDRFloat32 => write_scrgb_rgb128float
         };
@@ -163,6 +167,27 @@ fn read_rec2100_rgb24(data: &[u8]) -> Vec3 {
 }
 
 fn write_rec2100_rgb24(_data: &mut [u8], _rgb: Vec3) {
+    panic!("not yet implemented");
+}
+
+fn read_rec2100_rgb48(data: &[u8]) -> Vec3 {
+    // fixme do this sanely :D
+    let data_ref_u16: &u16 = unsafe {
+        std::mem::transmute(&data[0])
+    };
+    let data_u16 = unsafe {
+        std::slice::from_raw_parts(data_ref_u16, data.len())
+    };
+    let r = u16::from_be(data_u16[0]);
+    let g = u16::from_be(data_u16[1]);
+    let b = u16::from_be(data_u16[2]);
+    let scale = Vec3::splat(1.0 / 65535.0);
+    let rgb_rec2100 = Vec3::new(r as f32, g as f32, b as f32) * scale;
+    let rgb_linear = pq_to_linear(rgb_rec2100);
+    rec2100_to_scrgb(rgb_linear)
+}
+
+fn write_rec2100_rgb48(_data: &mut [u8], _rgb: Vec3) {
     panic!("not yet implemented");
 }
 
@@ -264,17 +289,18 @@ fn read_png(filename: &Path)
     let mut reader = decoder.read_info()?;
     let info = reader.info();
 
-    if info.bit_depth != png::BitDepth::Eight {
-        return Err(PNGFormatError);
-    }
-    if info.color_type != png::ColorType::Rgb {
-        return Err(PNGFormatError);
-    }
+    let format = match (info.bit_depth, info.color_type) {
+        (png::BitDepth::Eight, png::ColorType::Rgb) => HDR8bit,
+        (png::BitDepth::Sixteen, png::ColorType::Rgb) => HDR16bit,
+        (_, _) => {
+            return Err(PNGFormatError);
+        }
+    };
 
     let mut buffer = PixelBuffer::new(
         info.width as usize,
         info.height as usize,
-        HDR8bit
+        format
     );
     reader.next_frame(buffer.bytes_mut())?;
 
