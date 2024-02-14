@@ -1,7 +1,7 @@
 [package]
 name = "hdrfix"
-version = "1.0.5"
-authors = ["Brion Vibber <brion@pobox.com>"]
+version = "1.0.6"
+authors = ["Brooke Vibber <bvibber@pobox.com>"]
 edition = "2018"
 description = "A tool for mapping HDR screenshots to SDR"
 readme = "readme.md"
@@ -17,7 +17,7 @@ exclude = ["/samples", "/*.bat", "/*.sh"]
 [dependencies]
 # For the CLI util
 # todo: make optional
-jpegxr = "0.2.1"
+jpegxr = "0.3.1"
 png = "0.17.1"
 clap = "2.33.3"
 mtpng = "0.3.5"

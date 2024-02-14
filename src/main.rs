@@ -972,7 +972,7 @@ fn run(args: &ArgMatches) -> Result<()> {
 fn main() {
     let args = App::new("hdrfix converter for HDR screenshots")
         .version("0.1.0")
-        .author("Brion Vibber <brion@pobox.com>")
+        .author("Brooke Vibber <bvibber@pobox.com>")
         .arg(Arg::with_name("input")
             .help("Input filename, must be .jxr or .png as saved by NVIDIA capture overlay.")
             .index(1))

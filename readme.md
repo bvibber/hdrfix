@@ -10,7 +10,7 @@ Also works with 16-bit float input as saved from the Windows Game Bar now, howev
 
 ## Author, repo, etc
 
-* Brion Vibber `<brion @ pobox.com>`
+* Brooke Vibber `<bvibber @ pobox.com>`
 * https://github.com/brion/hdrfix
 * license: MIT (wrapper and conversion code), BSD (jpegxr library)
 
