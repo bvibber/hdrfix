@@ -6,7 +6,7 @@ Outputs files as regular SDR (standard dynamic range) PNGs in bog-standard sRGB 
 
 JPEG XR conversion is done with the `jpegxr` crate, which wraps Microsoft's BSD-licensed JPEG XR codec.
 
-Also works with 16-bit float input as saved from the Windows Game Bar now, however this is less tested.
+Also works with 16-bit float input as saved from the Windows Game Bar now and 10-bit RGB output from Xbox, however this is less tested.
 
 ## Author, repo, etc
 

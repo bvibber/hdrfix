@@ -16,6 +16,7 @@ call :convert sanfran
 call :convert spitfire
 call :convert sunrise
 call :convert usbank
+call :convert xbox
 
 exit /b %ERRORLEVEL%
 

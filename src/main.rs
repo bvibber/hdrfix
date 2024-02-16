@@ -59,6 +59,7 @@ struct Options {
 enum PixelFormat {
     SDR8bit,
     HDR8bit,
+    HDR10bit,
     HDR16bit,
     HDRFloat16,
     HDRFloat32,
@@ -82,6 +83,7 @@ impl PixelBuffer {
     fn new(width: usize, height: usize, format: PixelFormat) -> Self {
         let bytes_per_pixel = match format {
             SDR8bit | HDR8bit => 3,
+            HDR10bit => 4,
             HDR16bit => 6,
             HDRFloat16 => 8,
             HDRFloat32 => 16,
@@ -89,6 +91,7 @@ impl PixelBuffer {
         let read_rgb_func = match format {
             SDR8bit => read_srgb_rgb24,
             HDR8bit => read_rec2100_rgb24,
+            HDR10bit => read_rec2100_rgb32101010,
             HDR16bit => read_rec2100_rgb48,
             HDRFloat16 => read_scrgb_rgb64half,
             HDRFloat32 => read_scrgb_rgb128float
@@ -96,6 +99,7 @@ impl PixelBuffer {
         let write_rgb_func = match format {
             SDR8bit => write_srgb_rgb24,
             HDR8bit => write_rec2100_rgb24,
+            HDR10bit => write_rec2100_rgb32101010,
             HDR16bit => write_rec2100_rgb48,
             HDRFloat16 => write_scrgb_rgb64half,
             HDRFloat32 => write_scrgb_rgb128float
@@ -235,6 +239,20 @@ fn write_scrgb_rgb128float(data: &mut [u8], rgb: Vec3) {
     data_f32[2] = rgb.z;
 }
 
+fn read_rec2100_rgb32101010(data: &[u8]) -> Vec3 {
+    let data = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
+    let b = (data >>  0) & 0x03ff;
+    let g = (data >> 10) & 0x03ff;
+    let r = (data >> 20) & 0x03ff;
+    let max = 1023.0f32;
+    let pq = Vec3::new(r as f32 / max, g as f32 / max, b as f32 / max);
+    let linear = pq_to_linear(pq);
+    rec2100_to_scrgb(linear)
+}
+
+fn write_rec2100_rgb32101010(_data: &mut [u8], _rgb: Vec3) {
+    panic!("not yet implemented");
+}
 
 #[derive(Error, Debug)]
 enum LocalError {
@@ -326,6 +344,9 @@ fn read_jxr(filename: &Path)
         PixelFormat64bppRGBAHalf => {
             (8, HDRFloat16)
         },
+        PixelFormat32bppRGB101010 => {
+            (4, HDR10bit)
+        }
         _ => {
             println!("Pixel format: {:?}", format);
             return Err(UnsupportedPixelFormat);
@@ -971,7 +992,7 @@ fn run(args: &ArgMatches) -> Result<()> {
 
 fn main() {
     let args = App::new("hdrfix converter for HDR screenshots")
-        .version("0.1.0")
+        .version("1.0.7")
         .author("Brooke Vibber <bvibber@pobox.com>")
         .arg(Arg::with_name("input")
             .help("Input filename, must be .jxr or .png as saved by NVIDIA capture overlay.")

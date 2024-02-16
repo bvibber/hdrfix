@@ -1,3 +1,5 @@
+set -e
+
 convert() {
     cargo run --release -- \
         samples/"$1"-hdr.jxr \
@@ -20,3 +22,4 @@ convert sanfran
 convert spitfire
 convert sunrise
 convert usbank
+convert xbox
