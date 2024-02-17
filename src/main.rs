@@ -175,16 +175,9 @@ fn write_rec2100_rgb24(_data: &mut [u8], _rgb: Vec3) {
 }
 
 fn read_rec2100_rgb48(data: &[u8]) -> Vec3 {
-    // fixme do this sanely :D
-    let data_ref_u16: &u16 = unsafe {
-        std::mem::transmute(&data[0])
-    };
-    let data_u16 = unsafe {
-        std::slice::from_raw_parts(data_ref_u16, data.len())
-    };
-    let r = u16::from_be(data_u16[0]);
-    let g = u16::from_be(data_u16[1]);
-    let b = u16::from_be(data_u16[2]);
+    let r = u16::from_be_bytes([data[0], data[1]]);
+    let g = u16::from_be_bytes([data[2], data[3]]);
+    let b = u16::from_be_bytes([data[4], data[5]]);
     let scale = Vec3::splat(1.0 / 65535.0);
     let rgb_rec2100 = Vec3::new(r as f32, g as f32, b as f32) * scale;
     let rgb_linear = pq_to_linear(rgb_rec2100);
@@ -196,47 +189,35 @@ fn write_rec2100_rgb48(_data: &mut [u8], _rgb: Vec3) {
 }
 
 fn read_scrgb_rgb64half(data: &[u8]) -> Vec3 {
-    let data_ref_f16: &f16 = unsafe {
-        std::mem::transmute(&data[0])
-    };
-    let data_f16 = unsafe {
-        std::slice::from_raw_parts(data_ref_f16, data.len())
-    };
-    Vec3::new(data_f16[0].to_f32(), data_f16[1].to_f32(), data_f16[2].to_f32())
+    let r = f16::from_ne_bytes([data[0], data[1]]);
+    let g = f16::from_ne_bytes([data[2], data[3]]);
+    let b = f16::from_ne_bytes([data[4], data[5]]);
+    Vec3::new(r.to_f32(), g.to_f32(), b.to_f32())
 }
 
 fn write_scrgb_rgb64half(data: &mut [u8], rgb: Vec3) {
-    let data_ref_f16: &mut f16 = unsafe {
-        std::mem::transmute(&mut data[0])
-    };
-    let data_f16 = &mut unsafe {
-        std::slice::from_raw_parts_mut(data_ref_f16, data.len())
-    };
-    data_f16[0] = f16::from_f32(rgb.x);
-    data_f16[1] = f16::from_f32(rgb.y);
-    data_f16[2] = f16::from_f32(rgb.z);
+    let r = f16::from_f32(rgb.x).to_ne_bytes();
+    data[0..2].copy_from_slice(&r);
+    let g = f16::from_f32(rgb.y).to_ne_bytes();
+    data[2..4].copy_from_slice(&g);
+    let b = f16::from_f32(rgb.z).to_ne_bytes();
+    data[4..6].copy_from_slice(&b);
 }
 
 fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
-    let data_ref_f32: &f32 = unsafe {
-        std::mem::transmute(&data[0])
-    };
-    let data_f32 = unsafe {
-        std::slice::from_raw_parts(data_ref_f32, data.len())
-    };
-    Vec3::new(data_f32[0], data_f32[1], data_f32[2])
+    let r = f32::from_ne_bytes([data[0], data[1], data[2], data[3]]);
+    let g = f32::from_ne_bytes([data[4], data[5], data[6], data[7]]);
+    let b = f32::from_ne_bytes([data[8], data[9], data[10], data[11]]);
+    Vec3::new(r, g, b)
 }
 
 fn write_scrgb_rgb128float(data: &mut [u8], rgb: Vec3) {
-    let data_ref_f32: &mut f32 = unsafe {
-        std::mem::transmute(&mut data[0])
-    };
-    let data_f32 = &mut unsafe {
-        std::slice::from_raw_parts_mut(data_ref_f32, data.len())
-    };
-    data_f32[0] = rgb.x;
-    data_f32[1] = rgb.y;
-    data_f32[2] = rgb.z;
+    let r = rgb.x.to_ne_bytes();
+    data[0..4].copy_from_slice(&r);
+    let g = rgb.y.to_ne_bytes();
+    data[4..8].copy_from_slice(&g);
+    let b = rgb.z.to_ne_bytes();
+    data[8..12].copy_from_slice(&b);
 }
 
 fn read_rec2100_rgb32101010(data: &[u8]) -> Vec3 {
