@@ -188,36 +188,48 @@ fn write_rec2100_rgb48(_data: &mut [u8], _rgb: Vec3) {
     panic!("not yet implemented");
 }
 
+fn read_f16_ne(data: &[u8]) -> f32 {
+    f16::from_ne_bytes(*data.first_chunk::<2>().unwrap()).to_f32()
+}
+
 fn read_scrgb_rgb64half(data: &[u8]) -> Vec3 {
-    let r = f16::from_ne_bytes([data[0], data[1]]);
-    let g = f16::from_ne_bytes([data[2], data[3]]);
-    let b = f16::from_ne_bytes([data[4], data[5]]);
-    Vec3::new(r.to_f32(), g.to_f32(), b.to_f32())
-}
-
-fn write_scrgb_rgb64half(data: &mut [u8], rgb: Vec3) {
-    let r = f16::from_f32(rgb.x).to_ne_bytes();
-    data[0..2].copy_from_slice(&r);
-    let g = f16::from_f32(rgb.y).to_ne_bytes();
-    data[2..4].copy_from_slice(&g);
-    let b = f16::from_f32(rgb.z).to_ne_bytes();
-    data[4..6].copy_from_slice(&b);
-}
-
-fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
-    let r = f32::from_ne_bytes([data[0], data[1], data[2], data[3]]);
-    let g = f32::from_ne_bytes([data[4], data[5], data[6], data[7]]);
-    let b = f32::from_ne_bytes([data[8], data[9], data[10], data[11]]);
+    let r = read_f16_ne(&data[0..]);
+    let g = read_f16_ne(&data[2..]);
+    let b = read_f16_ne(&data[4..]);
     Vec3::new(r, g, b)
 }
 
+fn write_f16_ne(data: &mut [u8], n: f32) -> () {
+    let bytes = f16::from_f32(n).to_ne_bytes();
+    data[0..2].copy_from_slice(&bytes);
+}
+
+fn write_scrgb_rgb64half(data: &mut [u8], rgb: Vec3) {
+    write_f16_ne(&mut data[0..], rgb.x);
+    write_f16_ne(&mut data[2..], rgb.y);
+    write_f16_ne(&mut data[4..], rgb.z);
+}
+
+fn read_f32_ne(data: &[u8]) -> f32 {
+    f32::from_ne_bytes(*data.first_chunk::<4>().unwrap())
+}
+
+fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
+    let r = read_f32_ne(&data[0..]);
+    let g = read_f32_ne(&data[4..]);
+    let b = read_f32_ne(&data[8..]);
+    Vec3::new(r, g, b)
+}
+
+fn write_f32_ne(data: &mut [u8], n: f32) -> () {
+    let bytes = n.to_ne_bytes();
+    data[0..4].copy_from_slice(&bytes);
+}
+
 fn write_scrgb_rgb128float(data: &mut [u8], rgb: Vec3) {
-    let r = rgb.x.to_ne_bytes();
-    data[0..4].copy_from_slice(&r);
-    let g = rgb.y.to_ne_bytes();
-    data[4..8].copy_from_slice(&g);
-    let b = rgb.z.to_ne_bytes();
-    data[8..12].copy_from_slice(&b);
+    write_f32_ne(&mut data[0..], rgb.x);
+    write_f32_ne(&mut data[4..], rgb.y);
+    write_f32_ne(&mut data[8..], rgb.z);
 }
 
 fn read_rec2100_rgb32101010(data: &[u8]) -> Vec3 {
