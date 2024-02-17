@@ -189,7 +189,7 @@ fn write_rec2100_rgb48(_data: &mut [u8], _rgb: Vec3) {
 }
 
 fn read_f16_ne(data: &[u8]) -> f32 {
-    f16::from_ne_bytes(*data.first_chunk::<2>().unwrap()).to_f32()
+    f16::from_ne_bytes(*data.first_chunk().unwrap()).to_f32()
 }
 
 fn read_scrgb_rgb64half(data: &[u8]) -> Vec3 {
@@ -211,7 +211,7 @@ fn write_scrgb_rgb64half(data: &mut [u8], rgb: Vec3) {
 }
 
 fn read_f32_ne(data: &[u8]) -> f32 {
-    f32::from_ne_bytes(*data.first_chunk::<4>().unwrap())
+    f32::from_ne_bytes(*data.first_chunk().unwrap())
 }
 
 fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
