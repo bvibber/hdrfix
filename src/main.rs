@@ -3,7 +3,7 @@
 use std::cmp::Ordering;
 use std::ffi::OsString;
 use std::fs::File;
-use std::io::{self, Write};
+use std::io;
 use std::num;
 use std::path::Path;
 use std::sync::mpsc::{channel, RecvError};
@@ -440,7 +440,7 @@ fn tonemap_reinhard_oklab(c_in: Vec3, options: &Options) -> Vec3 {
 }
 
 fn oklab_l_for_luma(luma: f32) -> f32 {
-    let gray_rgb = oklab::RGB::new(luma, luma, luma);
+    let gray_rgb = oklab::Rgb::new(luma, luma, luma);
     let gray_oklab = linear_srgb_to_oklab(gray_rgb);
     gray_oklab.l
 }
@@ -738,15 +738,11 @@ fn write_jpeg(filename: &Path, data: &PixelBuffer)
         let mut c = Compress::new(ColorSpace::JCS_EXT_RGB);
         c.set_size(data.width, data.height);
         c.set_quality(95.0);
-        c.set_mem_dest(); // can't write direct to file?
-        c.start_compress();
-        if !c.write_scanlines(data.bytes()) {
-            panic!("error writing scanlines");
-        }
-        c.finish_compress();
-        let mut writer = File::create(filename).expect("error creating output file");
-        let data = c.data_as_mut_slice().expect("error accessing JPEG output buffer");
-        writer.write_all(data).expect("error writing output file");
+
+        let writer = File::create(filename).expect("error creating output file");
+        let mut comp = c.start_compress(writer).expect("error starting compression");
+        comp.write_scanlines(data.bytes()).expect("error writing scanlines");
+        comp.finish().expect("error compressing or writing output file");
     }).map_err(|_| JpegWriteFailure)
 }
 
@@ -790,11 +786,11 @@ impl Histogram {
     }
 }
 
-fn scrgb_to_linear_srgb(c: Vec3) -> oklab::RGB<f32> {
-    oklab::RGB::new(c.x, c.y, c.z)
+fn scrgb_to_linear_srgb(c: Vec3) -> oklab::Rgb<f32> {
+    oklab::Rgb::new(c.x, c.y, c.z)
 }
 
-fn linear_srgb_to_scrgb(c: oklab::RGB<f32>) -> Vec3 {
+fn linear_srgb_to_scrgb(c: oklab::Rgb<f32>) -> Vec3 {
     Vec3::new(c.r, c.g, c.b)
 }
 

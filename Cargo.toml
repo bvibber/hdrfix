@@ -18,18 +18,18 @@ exclude = ["/samples", "/*.bat", "/*.sh"]
 # For the CLI util
 # todo: make optional
 jpegxr = "0.3.1"
-png = "0.17.1"
+png = "0.17.14"
 clap = "2.33.3"
 mtpng = "0.3.5"
 time = "0.3.3"
 notify = "4.0.17"
 image = "0.23.14"
 # disable nasm_simd, it breaks on Windows/arm64
-mozjpeg = { version = "0.9.4", default_features = false }
+mozjpeg = { version = "0.10.10", default-features = false }
 
 # For the actual conversion code
 glam = "0.18.0"
 thiserror = "1.0.29"
 rayon = "1.5.1"
-oklab = "1.0.0"
+oklab = "1.1.2"
 half = { version = "1.7.1", features = [ "std", "num-traits" ] }
