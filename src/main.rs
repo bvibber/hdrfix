@@ -688,7 +688,7 @@ fn linear_to_srgb(val: Vec3) -> Vec3 {
 }
 
 const REC2100_MAX: f32 = 10000.0; // the 1.0 value for BT.2100 linear
-const SDR_WHITE: f32 = 80.0;
+const SDR_WHITE: f32 = 200.0;
 
 fn exposure_scale(stops: f32) -> f32
 {
