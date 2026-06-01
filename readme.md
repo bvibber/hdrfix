@@ -11,7 +11,7 @@ Also works with 16-bit float input as saved from the Windows Game Bar now and 10
 ## Author, repo, etc
 
 * Brooke Vibber `<bvibber @ pobox.com>`
-* https://github.com/brion/hdrfix
+* https://github.com/bvibber/hdrfix
 * license: MIT (wrapper and conversion code), BSD (jpegxr library)
 
 ## Dependencies
@@ -32,7 +32,7 @@ Also works with 16-bit float input as saved from the Windows Game Bar now and 10
 
 From binary release download:
 
-* download the latest release from https://github.com/brion/hdrfix/releases
+* download the latest release from https://github.com/bvibber/hdrfix/releases
 * copy `hdrfix.exe` and (optionally) `watch.bat` into a desired directory
 * for instance, `C:\Users\<Yourname>\Videos\Microsoft Flight Simulator`
 
