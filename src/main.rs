@@ -199,7 +199,7 @@ fn read_scrgb_rgb64half(data: &[u8]) -> Vec3 {
     Vec3::new(r, g, b)
 }
 
-fn write_f16_ne(data: &mut [u8], n: f32) -> () {
+fn write_f16_ne(data: &mut [u8], n: f32) {
     let bytes = f16::from_f32(n).to_ne_bytes();
     data[0..2].copy_from_slice(&bytes);
 }
@@ -221,7 +221,7 @@ fn read_scrgb_rgb128float(data: &[u8]) -> Vec3 {
     Vec3::new(r, g, b)
 }
 
-fn write_f32_ne(data: &mut [u8], n: f32) -> () {
+fn write_f32_ne(data: &mut [u8], n: f32) {
     let bytes = n.to_ne_bytes();
     data[0..4].copy_from_slice(&bytes);
 }
@@ -234,7 +234,7 @@ fn write_scrgb_rgb128float(data: &mut [u8], rgb: Vec3) {
 
 fn read_rec2100_rgb32101010(data: &[u8]) -> Vec3 {
     let data = u32::from_le_bytes([data[0], data[1], data[2], data[3]]);
-    let b = (data >>  0) & 0x03ff;
+    let b = (data      ) & 0x03ff;
     let g = (data >> 10) & 0x03ff;
     let r = (data >> 20) & 0x03ff;
     let max = 1023.0f32;
