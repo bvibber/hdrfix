@@ -25,6 +25,9 @@ use notify::{DebouncedEvent, RecursiveMode, RecommendedWatcher, Watcher};
 // Error bits
 use thiserror::Error;
 
+mod mshist;
+mod shadows;
+
 type Result<T> = std::result::Result<T, LocalError>;
 
 // Color fun
@@ -52,8 +55,13 @@ struct Options {
     scale: f32,
     hdr_max: f32,
     saturation: f32,
-    tone_map: fn(Vec3, &Options) -> Vec3,
+    tone_map: ToneMap,
     color_map: fn(Vec3) -> Vec3,
+}
+
+enum ToneMap {
+    PerPixel(fn(Vec3, &Options) -> Vec3),
+    MultiScaleHistogram,
 }
 
 enum PixelFormat {
@@ -695,11 +703,54 @@ fn exposure_scale(stops: f32) -> f32
     2.0_f32.powf(stops)
 }
 
-fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, options: &Options) -> Vec3
+fn hdr_to_sdr_pixel(rgb_scrgb: Vec3, tone_map: fn(Vec3, &Options) -> Vec3, options: &Options) -> Vec3
 {
     let val = rgb_scrgb * options.scale;
-    let val = (options.tone_map)(val, options);
+    let val = tone_map(val, options);
     (options.color_map)(val)
+}
+
+const NEUTRAL_SATURATION: f32 = 3.0;
+
+fn hdr_to_sdr_locally(source: &PixelBuffer, tone_mapped: &mut PixelBuffer, options: &Options)
+{
+    let mut lumas = Vec::<f32>::new();
+    source.pixels().map(|rgb| luma_scrgb(rgb * options.scale)).collect_into_vec(&mut lumas);
+    let mapped_lumas = mshist::map_luminance_multi_scale(&lumas, source.width, source.height);
+    let saturation = options.saturation * NEUTRAL_SATURATION;
+
+    tone_mapped.fill(source.pixels().zip(mapped_lumas.par_iter()).map(|(rgb, luma_out)| {
+        let oklab_out = scale_oklab_desat(scrgb_to_oklab(rgb * options.scale), *luma_out, saturation);
+        (options.color_map)(oklab_to_scrgb(oklab_out))
+    }));
+}
+
+const SHADOWS_SLIDER_MAX: f32 = 100.0;
+const MSHIST_SHADOWS_SLIDER: f32 = 22.0;
+
+fn find_default_shadows(tone_map: &ToneMap) -> f32
+{
+    match tone_map {
+        ToneMap::MultiScaleHistogram => MSHIST_SHADOWS_SLIDER,
+        ToneMap::PerPixel(_) => 0.0,
+    }
+}
+
+fn lift_shadows(tone_mapped: PixelBuffer, slider: f32) -> PixelBuffer
+{
+    if slider == 0.0 {
+        return tone_mapped;
+    }
+
+    let mut lumas = Vec::<f32>::new();
+    tone_mapped.pixels().map(luma_scrgb).collect_into_vec(&mut lumas);
+    let lifted_lumas = shadows::lift_shadows(&lumas, tone_mapped.width, tone_mapped.height, slider / SHADOWS_SLIDER_MAX);
+
+    let mut lifted = PixelBuffer::new(tone_mapped.width, tone_mapped.height, HDRFloat32);
+    lifted.fill(tone_mapped.pixels().zip(lifted_lumas.par_iter()).map(|(rgb, luma_out)| {
+        oklab_to_scrgb(scale_oklab(scrgb_to_oklab(rgb), *luma_out))
+    }));
+    lifted
 }
 
 fn write_png(filename: &Path, data: &PixelBuffer)
@@ -897,12 +948,13 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
         hdr_max,
         saturation: args.value_of("saturation").expect("saturation arg").parse()?,
         tone_map: match args.value_of("tone-map").expect("tone-map arg") {
-            "linear" => tonemap_linear,
-            "reinhard" => tonemap_reinhard_oklab,
-            "reinhard-rgb" => tonemap_reinhard_rgb,
-            "aces" => tonemap_aces,
-            "uncharted2" => tonemap_uncharted2,
-            "hable" => tonemap_hable,
+            "linear" => ToneMap::PerPixel(tonemap_linear),
+            "reinhard" => ToneMap::PerPixel(tonemap_reinhard_oklab),
+            "reinhard-rgb" => ToneMap::PerPixel(tonemap_reinhard_rgb),
+            "aces" => ToneMap::PerPixel(tonemap_aces),
+            "uncharted2" => ToneMap::PerPixel(tonemap_uncharted2),
+            "hable" => ToneMap::PerPixel(tonemap_hable),
+            "mshist" => ToneMap::MultiScaleHistogram,
             _ => unreachable!("bad tone-map option")
         },
         color_map: match args.value_of("color-map").expect("color-map arg") {
@@ -915,9 +967,18 @@ fn hdrfix(input_filename: &Path, output_filename: &Path, args: &ArgMatches) -> R
 
     let mut tone_mapped = PixelBuffer::new(width, height, HDRFloat32);
     time_func("hdr_to_sdr", || {
-        tone_mapped.fill(source.pixels().map(|rgb| hdr_to_sdr_pixel(rgb, &options)));
+        match options.tone_map {
+            ToneMap::PerPixel(tone_map) => tone_mapped.fill(source.pixels().map(|rgb| hdr_to_sdr_pixel(rgb, tone_map, &options))),
+            ToneMap::MultiScaleHistogram => hdr_to_sdr_locally(&source, &mut tone_mapped, &options),
+        }
         Ok(())
     })?;
+
+    let shadows_slider = match args.value_of("shadows") {
+        Some(text) => text.parse::<f32>()?,
+        None => find_default_shadows(&options.tone_map),
+    }.max(0.0).min(SHADOWS_SLIDER_MAX);
+    let tone_mapped = time_func("lift shadows", || Ok(lift_shadows(tone_mapped, shadows_slider)))?;
 
     // apply histogram expansion and color gamut correction to output
     let mut lazy_histogram = Lazy::new(|| {
@@ -1000,7 +1061,7 @@ fn main() {
         .arg(Arg::with_name("tone-map")
             .help("Method for mapping HDR into SDR domain.")
             .long("tone-map")
-            .possible_values(&["linear", "reinhard", "reinhard-rgb", "aces", "uncharted2", "hable"])
+            .possible_values(&["linear", "reinhard", "reinhard-rgb", "aces", "uncharted2", "hable", "mshist"])
             .default_value("hable"))
         .arg(Arg::with_name("hdr-max")
             .help("Max HDR luminance level for Reinhard algorithm, in nits or a percentile to be calculated from input data. The default is 100%, which represents the highest input value.")
@@ -1027,6 +1088,10 @@ fn main() {
             .help("Maximum input level to normalize to 1 when expanding input for processing. May be an absolute value in -infinity..infinity range or a percentile from 0% to 100%.")
             .long("pre-levels-max")
             .default_value("1.0"))
+        .arg(Arg::with_name("shadows")
+            .help("Lifts dark areas after tone mapping, 0 to 100, like the shadow recovery slider in photo editors. Works by area, so detail inside the shadows keeps its contrast. Applied before post-gamma. Defaults to 22 with the mshist tone map and 0 otherwise.")
+            .long("shadows")
+            .takes_value(true))
         .arg(Arg::with_name("post-gamma")
             .help("Gamma power applied on output.")
             .long("post-gamma")
