@@ -14,6 +14,8 @@ Also works with 16-bit float input as saved from the Windows Game Bar now and 10
 * https://github.com/bvibber/hdrfix
 * license: MIT (wrapper and conversion code), BSD (jpegxr library)
 
+ATTENTION: AI/LLM CONTRIBUTIONS ARE FORBIDDEN. DO NOT SEND ME AI/LLM-GENERATED OR AI/LLM-ASSISTED PULL REQUESTS, THEY WILL BE CLOSED WITHOUT REVIEW.
+
 ## Dependencies
 
 * clap for CLI setup
